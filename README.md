@@ -19,46 +19,83 @@ managed services while supporting AWS-independent local development.
 
 ```mermaid
 flowchart LR
-    infra["platform-infrastructure<br/>Terraform"]
-    gitops["platform-gitops<br/>Argo CD desired state"]
-    services["Service repositories<br/>code, migrations, event contracts"]
-
-    subgraph aws["AWS account"]
-        subgraph network["Private VPC"]
-            eks["Amazon EKS"]
-            rds["PostgreSQL<br/>Amazon RDS"]
-            msk["Kafka<br/>Amazon MSK"]
-            redis["Redis<br/>ElastiCache"]
-            search["OpenSearch"]
-            secrets["AWS Secrets Manager"]
-        end
-        iam["IAM roles and policies"]
+    subgraph source["Versioned sources and ownership"]
+        infra["platform-infrastructure<br/>Terraform root + database module"]
+        gitops["platform-gitops<br/>Argo CD desired state"]
+        services["Service repositories<br/>application source + contracts"]
     end
 
-    subgraph workloads["GitOps-managed EKS workloads"]
-        catalog["product-catalog"]
-        productSearch["product-search"]
-        connect["Kafka Connect"]
-        eso["External Secrets Operator"]
+    subgraph automation["Infrastructure workflow"]
+        validate["PR / push validation<br/>format, scripts, Compose, Terraform"]
+        operator["Authorized operator"]
+        deploy["Manual Terraform workflow<br/>plan; protected apply"]
+        oidc["GitHub OIDC role"]
     end
 
-    infra -->|"provisions cloud resources"| aws
-    infra -->|"non-secret outputs"| gitops
-    services -->|"images and application contracts"| gitops
-    gitops -->|"reconciles Kubernetes resources"| eks
-    eks --> workloads
+    state[("S3 Terraform backend<br/>state + lock file<br/>bootstrapped separately")]
+    handoff["Terraform output helper<br/>non-secret configuration"]
+    outputs["Terraform outputs<br/>resource IDs, endpoints,<br/>role ARNs, secret identifiers"]
+    registry[("GHCR<br/>images pinned by digest")]
 
-    catalog --> rds
-    catalog --> msk
-    catalog --> redis
-    productSearch --> rds
-    productSearch --> msk
-    productSearch --> redis
-    productSearch --> search
-    connect --> rds
-    connect --> msk
-    eso -->|"assumes workload identity"| iam
-    eso -->|"reads runtime credentials"| secrets
+    subgraph aws["AWS — declared resources; live deployment unverified"]
+        direction TB
+        vpc["VPC<br/>3 AZ · private subnets · NAT per AZ"]
+        eks["Private EKS<br/>managed nodes + AWS add-ons"]
+        data["Managed data services<br/>RDS · MSK · Redis · OpenSearch"]
+        iam["IAM workload roles"]
+        secrets["Secrets Manager"]
+        observability["CloudWatch logs, alarms,<br/>dashboard"]
+    end
+
+    subgraph runtime["Kubernetes target — installation and live state unverified"]
+        direction TB
+        argocd["Argo CD<br/>operator-installed prerequisite"]
+        workloads["Catalog + Search workloads<br/>GitOps-managed"]
+        connect["Kafka Connect<br/>GitOps-managed"]
+        eso["External Secrets Operator<br/>GitOps-managed"]
+        alb["AWS Load Balancer Controller<br/>optional ingress"]
+    end
+
+    infra -->|"PR / push"| validate
+    operator -->|"manual dispatch"| deploy
+    infra -.->|"configuration"| deploy
+    deploy -->|"assumes"| oidc
+    deploy <-->|"reads / writes locked state"| state
+    oidc -->|"AWS provider authentication"| aws
+    deploy -->|"Terraform provisions"| aws
+    aws -->|"publishes metadata"| outputs
+    outputs --> handoff
+    handoff -->|"operator reviews Git changes"| gitops
+
+    operator -->|"applies root bootstrap"| argocd
+    gitops -->|"desired state source"| argocd
+    eks -->|"hosts if deployed"| runtime
+    argocd -->|"manual sync"| workloads
+    argocd -->|"manual sync"| connect
+    argocd -->|"manual sync"| eso
+    argocd -->|"manual sync"| alb
+
+    services -->|"build and publish"| registry
+    infra -->|"Kafka Connect image workflow"| registry
+    registry -->|"image pulls"| workloads
+    registry -->|"image pull"| connect
+
+    workloads -->|"private service access"| data
+    connect -->|"CDC source and broker"| data
+    eso -->|"workload identity"| iam
+    eso -->|"reads credentials"| secrets
+
+    classDef source fill:#e8f0fe,stroke:#1a73e8,color:#174ea6
+    classDef automation fill:#f3e8fd,stroke:#9334e6,color:#681da8
+    classDef aws fill:#fff3e0,stroke:#e37400,color:#7f3b00
+    classDef runtime fill:#e6f4ea,stroke:#188038,color:#0d652d
+    classDef external fill:#f1f3f4,stroke:#5f6368,color:#202124
+
+    class infra,gitops,services source
+    class validate,operator,deploy,oidc automation
+    class state,registry external
+    class vpc,eks,data,iam,secrets,observability aws
+    class argocd,workloads,connect,eso,alb runtime
 ```
 
 ### Resource ownership
