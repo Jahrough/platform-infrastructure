@@ -1,59 +1,28 @@
-resource "aws_db_subnet_group" "rds_subnet_group" {
-  name       = "product-catalog-db-subnet-group"
-  subnet_ids = module.vpc.private_subnets
+module "database" {
+  source = "./modules/database"
 
-  tags = {
-    Name = "product-db-subnet-group"
-  }
+  cluster_name            = var.cluster_name
+  vpc_id                  = module.vpc.vpc_id
+  private_subnet_ids      = module.vpc.private_subnets
+  eks_node_security_group = module.eks.node_security_group_id
 }
 
-resource "aws_security_group" "rds_sg" {
-  name   = "product-rds-security-group"
-  vpc_id = module.vpc.vpc_id
-
-  ingress {
-    description     = "PostgreSQL access from EKS worker nodes"
-    from_port       = 5432
-    to_port         = 5432
-    protocol        = "tcp"
-    security_groups = [module.eks.node_security_group_id]
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
+moved {
+  from = aws_db_subnet_group.rds_subnet_group
+  to   = module.database.aws_db_subnet_group.rds_subnet_group
 }
 
-resource "aws_db_instance" "postgres" {
-  identifier                  = "product-db"
-  engine                      = "postgres"
-  engine_version              = "15.4"
-  instance_class              = "db.t4g.micro"
-  allocated_storage           = 20
-  max_allocated_storage       = 100
-  db_name                     = "product_catalog"
-  username                    = "postgres"
-  manage_master_user_password = true
-  db_subnet_group_name        = aws_db_subnet_group.rds_subnet_group.name
-  parameter_group_name        = aws_db_parameter_group.postgres.name
-  vpc_security_group_ids      = [aws_security_group.rds_sg.id]
-  storage_encrypted           = true
-  backup_retention_period     = 7
-  multi_az                    = true
-  deletion_protection         = true
-  skip_final_snapshot         = false
-  final_snapshot_identifier   = "product-db-final-snapshot"
-  publicly_accessible         = false
-  auto_minor_version_upgrade  = true
+moved {
+  from = aws_security_group.rds_sg
+  to   = module.database.aws_security_group.rds_sg
+}
 
-  tags = {
-    Environment = "production"
-  }
+moved {
+  from = aws_db_instance.postgres
+  to   = module.database.aws_db_instance.postgres
+}
 
-  lifecycle {
-    prevent_destroy = true
-  }
+moved {
+  from = aws_db_parameter_group.postgres
+  to   = module.database.aws_db_parameter_group.postgres
 }

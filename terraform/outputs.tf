@@ -25,12 +25,12 @@ output "vpc_id" {
 
 output "rds_endpoint" {
   description = "RDS PostgreSQL instance connection endpoint"
-  value       = aws_db_instance.postgres.endpoint
+  value       = module.database.endpoint
 }
 
 output "rds_master_secret_arn" {
   description = "AWS-managed RDS master credential secret ARN; do not use it as an application credential."
-  value       = aws_db_instance.postgres.master_user_secret[0].secret_arn
+  value       = module.database.master_user_secret_arn
 }
 
 output "kafka_bootstrap_tls" {

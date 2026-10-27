@@ -44,23 +44,6 @@ resource "aws_cloudwatch_log_group" "msk" {
   retention_in_days = 30
 }
 
-resource "aws_db_parameter_group" "postgres" {
-  name   = "${var.cluster_name}-postgres15"
-  family = "postgres15"
-
-  parameter {
-    name         = "rds.logical_replication"
-    value        = "1"
-    apply_method = "pending-reboot"
-  }
-
-  parameter {
-    name         = "rds.force_ssl"
-    value        = "1"
-    apply_method = "pending-reboot"
-  }
-}
-
 resource "aws_msk_cluster" "platform" {
   cluster_name           = "${var.cluster_name}-kafka"
   kafka_version          = "3.7.0"
@@ -239,7 +222,7 @@ resource "aws_cloudwatch_metric_alarm" "rds_cpu" {
   threshold           = 80
   comparison_operator = "GreaterThanThreshold"
   dimensions = {
-    DBInstanceIdentifier = aws_db_instance.postgres.identifier
+    DBInstanceIdentifier = module.database.identifier
   }
   alarm_actions = var.alert_email == null || trimspace(var.alert_email) == "" ? [] : [aws_sns_topic.alerts[0].arn]
   ok_actions    = var.alert_email == null || trimspace(var.alert_email) == "" ? [] : [aws_sns_topic.alerts[0].arn]
@@ -291,7 +274,7 @@ resource "aws_cloudwatch_metric_alarm" "rds_low_storage" {
   threshold           = 5368709120
   comparison_operator = "LessThanThreshold"
   dimensions = {
-    DBInstanceIdentifier = aws_db_instance.postgres.identifier
+    DBInstanceIdentifier = module.database.identifier
   }
   alarm_actions = var.alert_email == null || trimspace(var.alert_email) == "" ? [] : [aws_sns_topic.alerts[0].arn]
   ok_actions    = var.alert_email == null || trimspace(var.alert_email) == "" ? [] : [aws_sns_topic.alerts[0].arn]
@@ -308,7 +291,7 @@ resource "aws_cloudwatch_metric_alarm" "rds_connections" {
   threshold           = 80
   comparison_operator = "GreaterThanThreshold"
   dimensions = {
-    DBInstanceIdentifier = aws_db_instance.postgres.identifier
+    DBInstanceIdentifier = module.database.identifier
   }
   alarm_actions = var.alert_email == null || trimspace(var.alert_email) == "" ? [] : [aws_sns_topic.alerts[0].arn]
   ok_actions    = var.alert_email == null || trimspace(var.alert_email) == "" ? [] : [aws_sns_topic.alerts[0].arn]
@@ -382,7 +365,7 @@ resource "aws_cloudwatch_dashboard" "platform" {
           period = 300
           stat   = "Average"
           metrics = [
-            ["AWS/RDS", "CPUUtilization", "DBInstanceIdentifier", aws_db_instance.postgres.identifier],
+            ["AWS/RDS", "CPUUtilization", "DBInstanceIdentifier", module.database.identifier],
             [".", "FreeStorageSpace", ".", ".", { stat = "Minimum", yAxis = "right" }],
             [".", "DatabaseConnections", ".", ".", { yAxis = "right" }],
           ]
@@ -438,7 +421,7 @@ resource "aws_secretsmanager_secret" "runtime_config" {
 resource "aws_secretsmanager_secret_version" "runtime_config" {
   secret_id = aws_secretsmanager_secret.runtime_config.id
   secret_string = jsonencode({
-    DB_HOST                 = split(":", aws_db_instance.postgres.endpoint)[0]
+    DB_HOST                 = split(":", module.database.endpoint)[0]
     DB_PORT                 = "5432"
     DB_NAME                 = "product_catalog"
     REDIS_HOST              = aws_elasticache_replication_group.platform.primary_endpoint_address

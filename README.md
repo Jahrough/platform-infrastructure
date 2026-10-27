@@ -95,7 +95,8 @@ transfer, and regional service support before creating resources.
 
 | Path | Purpose |
 | --- | --- |
-| `terraform/` | AWS providers, VPC, RDS, EKS, managed data services, IAM, alarms, and outputs |
+| `terraform/` | Single production-root composition, VPC/EKS modules, database module, managed data services, IAM, alarms, and outputs |
+| `terraform/modules/database/` | Reusable PostgreSQL instance, subnet group, security group, and parameter group |
 | `kubernetes/base/` | Shared catalog and search Deployments, Services, and namespace |
 | `kubernetes/overlays/dev/` | Development Kustomize overlay |
 | `kubernetes/overlays/staging/` | Staging Kustomize overlay |
@@ -338,6 +339,16 @@ values exist.
 - Compose configuration using a validation-only PostgreSQL password.
 - Connector JSON and shell script syntax.
 - Terraform formatting, initialization, and validation.
+
+The Terraform configuration remains a single root using the existing S3
+backend. The PostgreSQL resources are grouped in a local module with explicit
+VPC, subnet, and EKS-node-security-group inputs. The VPC and EKS registry
+modules remain directly composed at the root to preserve their existing
+addresses. The other managed-service, IAM, and observability resources remain
+in the root until their state mappings and environment requirements are
+reviewed. Empty environment directories are not deployment configurations;
+do not infer that dev/staging stacks exist or initialize separate state for
+them.
 
 Run equivalent checks locally from the repository root:
 
