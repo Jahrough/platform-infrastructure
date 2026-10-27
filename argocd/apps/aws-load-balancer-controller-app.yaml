@@ -1,0 +1,37 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: aws-load-balancer-controller
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://aws.github.io/eks-charts
+    chart: aws-load-balancer-controller
+    targetRevision: 1.11.0
+    helm:
+      releaseName: aws-load-balancer-controller
+      values: |
+        clusterName: REPLACE_WITH_EKS_CLUSTER_NAME
+        region: REPLACE_WITH_AWS_REGION
+        vpcId: REPLACE_WITH_VPC_ID
+        replicaCount: 2
+        serviceAccount:
+          create: true
+          name: aws-load-balancer-controller
+          annotations:
+            eks.amazonaws.com/role-arn: REPLACE_WITH_LOAD_BALANCER_CONTROLLER_IRSA_ROLE_ARN
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-system
+  syncPolicy:
+    retry:
+      limit: 10
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 5m
+    automated:
+      prune: true
+      selfHeal: true

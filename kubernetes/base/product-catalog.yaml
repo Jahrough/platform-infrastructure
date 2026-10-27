@@ -26,6 +26,7 @@ spec:
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities:
               drop:
                 - ALL
@@ -37,17 +38,17 @@ spec:
               value: "prod"
             - name: DB_HOST
               valueFrom:
-                configMapKeyRef:
+                secretKeyRef:
                   name: platform-runtime-config
                   key: DB_HOST
             - name: DB_PORT
               valueFrom:
-                configMapKeyRef:
+                secretKeyRef:
                   name: platform-runtime-config
                   key: DB_PORT
             - name: DB_NAME
               valueFrom:
-                configMapKeyRef:
+                secretKeyRef:
                   name: platform-runtime-config
                   key: DB_NAME
             - name: DB_USER
@@ -62,19 +63,28 @@ spec:
                   key: password
             - name: REDIS_HOST
               valueFrom:
-                configMapKeyRef:
+                secretKeyRef:
                   name: platform-runtime-config
                   key: REDIS_HOST
             - name: REDIS_PORT
               valueFrom:
-                configMapKeyRef:
+                secretKeyRef:
                   name: platform-runtime-config
                   key: REDIS_PORT
+            - name: SPRING_DATA_REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: platform-cache-auth
+                  key: password
+            - name: SPRING_DATA_REDIS_SSL_ENABLED
+              value: "true"
             - name: SPRING_KAFKA_BOOTSTRAP_SERVERS
               valueFrom:
-                configMapKeyRef:
+                secretKeyRef:
                   name: platform-runtime-config
                   key: KAFKA_BOOTSTRAP_SERVERS
+            - name: SPRING_KAFKA_PROPERTIES_SECURITY_PROTOCOL
+              value: "SSL"
           resources:
             requests:
               memory: "512Mi"
@@ -82,6 +92,9 @@ spec:
             limits:
               memory: "1024Mi"
               cpu: "500m"
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
           startupProbe:
             httpGet:
               path: /actuator/health/liveness
@@ -99,6 +112,10 @@ spec:
               port: 8080
             periodSeconds: 5
             timeoutSeconds: 3
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 256Mi
 ---
 apiVersion: v1
 kind: Service

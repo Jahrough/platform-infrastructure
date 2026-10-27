@@ -1,0 +1,79 @@
+---
+name: Validate infrastructure
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/**"
+      - "argocd/**"
+      - "compose/**"
+      - "connectors/**"
+      - "kubernetes/**"
+      - "terraform/**"
+      - "scripts/**"
+      - ".yamllint"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/**"
+      - "argocd/**"
+      - "compose/**"
+      - "connectors/**"
+      - "kubernetes/**"
+      - "terraform/**"
+      - "scripts/**"
+      - ".yamllint"
+
+permissions:
+  contents: read
+
+jobs:
+  manifests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-kubectl@v4
+        with:
+          version: v1.33.0
+      - name: Install yamllint
+        run: python -m pip install yamllint
+      - name: Lint YAML
+        run: yamllint argocd kubernetes compose .github/workflows
+      - name: Render Kustomize overlays
+        run: |
+          set -euo pipefail
+          for environment in dev staging prod; do
+            kubectl kustomize "kubernetes/overlays/${environment}" \
+              > "/tmp/${environment}.yaml"
+          done
+          kubectl kustomize kubernetes/overlays/prod/cdc \
+            > /tmp/product-cdc.yaml
+          kubectl kustomize kubernetes/cluster-config \
+            > /tmp/cluster-config.yaml
+      - name: Validate Compose files
+        env:
+          POSTGRES_PASSWORD: validation-only-password
+        run: >-
+          docker compose -f compose/compose.yml
+          -f compose/compose.apps.yaml config --quiet
+      - name: Validate connector JSON and scripts
+        run: |
+          python -m json.tool connectors/postgres-outbox-connector.json >/dev/null
+          for file in scripts/*.sh; do bash -n "$file"; done
+
+  terraform:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: terraform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.10.5
+      - name: Check formatting
+        run: terraform fmt -check -recursive
+      - name: Initialize providers and modules
+        run: terraform init -backend=false -input=false
+      - name: Validate configuration
+        run: terraform validate

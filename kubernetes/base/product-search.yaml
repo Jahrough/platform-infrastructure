@@ -15,10 +15,6 @@ spec:
     metadata:
       labels:
         app: product-search
-      annotations:
-        prometheus.io/scrape: "true"
-        prometheus.io/port: "8080"
-        prometheus.io/path: "/actuator/prometheus"
     spec:
       securityContext:
         runAsNonRoot: true
@@ -49,37 +45,46 @@ spec:
               value: "8081"
             - name: REDIS_HOST
               valueFrom:
-                configMapKeyRef:
+                secretKeyRef:
                   name: platform-runtime-config
                   key: REDIS_HOST
             - name: REDIS_PORT
               valueFrom:
-                configMapKeyRef:
+                secretKeyRef:
                   name: platform-runtime-config
                   key: REDIS_PORT
+            - name: SPRING_DATA_REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: platform-cache-auth
+                  key: password
+            - name: SPRING_DATA_REDIS_SSL_ENABLED
+              value: "true"
             - name: SPRING_DATASOURCE_URL
               valueFrom:
                 secretKeyRef:
-                  name: platform-db
+                  name: platform-search-db
                   key: url
             - name: SPRING_DATASOURCE_USERNAME
               valueFrom:
                 secretKeyRef:
-                  name: platform-db
+                  name: platform-search-db
                   key: username
             - name: SPRING_DATASOURCE_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: platform-db
+                  name: platform-search-db
                   key: password
             - name: SPRING_KAFKA_BOOTSTRAP_SERVERS
               valueFrom:
-                configMapKeyRef:
+                secretKeyRef:
                   name: platform-runtime-config
                   key: KAFKA_BOOTSTRAP_SERVERS
+            - name: SPRING_KAFKA_PROPERTIES_SECURITY_PROTOCOL
+              value: "SSL"
             - name: OPENSEARCH_URIS
               valueFrom:
-                configMapKeyRef:
+                secretKeyRef:
                   name: platform-runtime-config
                   key: OPENSEARCH_URIS
           resources:

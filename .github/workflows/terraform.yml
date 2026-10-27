@@ -1,0 +1,51 @@
+---
+name: Terraform deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Plan only, or apply the plan after protected-environment approval
+        required: true
+        type: choice
+        options:
+          - plan
+          - apply
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    environment: production
+    defaults:
+      run:
+        working-directory: terraform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.10.5
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.TERRAFORM_AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: Initialize remote state
+        run: |
+          terraform init -input=false \
+            -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
+            -backend-config="key=${{ vars.TF_STATE_KEY }}" \
+            -backend-config="region=${{ vars.AWS_REGION }}" \
+            -backend-config="encrypt=true" \
+            -backend-config="use_lockfile=true"
+      - name: Plan infrastructure
+        env:
+          TF_VAR_aws_region: ${{ vars.AWS_REGION }}
+          TF_VAR_cluster_version: ${{ vars.CLUSTER_VERSION }}
+          TF_VAR_alert_email: ${{ vars.ALERT_EMAIL }}
+        run: terraform plan -input=false -out=tfplan
+      - name: Apply reviewed plan
+        if: inputs.operation == 'apply'
+        run: terraform apply -input=false -auto-approve tfplan

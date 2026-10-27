@@ -1,0 +1,63 @@
+---
+name: Publish Kafka Connect image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "compose/Dockerfile.kafka-connect"
+      - ".github/workflows/publish-kafka-connect.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/jahrough/platform-infrastructure/kafka-connect
+          tags: |
+            type=sha,prefix=
+            type=raw,value=latest,enable={{is_default_branch}}
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/setup-buildx-action@v3
+      - name: Build image for vulnerability scanning
+        run: |
+          docker build \
+            --file compose/Dockerfile.kafka-connect \
+            --tag "ghcr.io/jahrough/platform-infrastructure/kafka-connect:${GITHUB_SHA}" \
+            compose
+      - name: Scan image for critical and high vulnerabilities
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ghcr.io/jahrough/platform-infrastructure/kafka-connect:${{ github.sha }}
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: "1"
+      - name: Build and publish
+        uses: docker/build-push-action@v6
+        with:
+          context: ./compose
+          file: ./compose/Dockerfile.kafka-connect
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: true
+          sbom: true

@@ -4,7 +4,14 @@ kind: Kustomization
 
 resources:
   - ../../base
+  - platform-runtime-config.external-secret.yaml
+  - platform-cache-auth.external-secret.yaml
+  - platform-catalog-db.external-secret.yaml
+  - platform-search-db.external-secret.yaml
+  - product-catalog-hpa.yaml
   - product-search-hpa.yaml
+  - product-catalog-pdb.yaml
+  - product-search-pdb.yaml
 
 namespace: platform-production
 

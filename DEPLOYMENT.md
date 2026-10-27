@@ -1,12 +1,20 @@
 # Deployment
 
-## What this repository provisions
+## Platform components and cost
 
-Terraform provisions a private-subnet EKS cluster and a private PostgreSQL RDS
-instance. The Kubernetes production overlay deploys the catalog and search
-applications into `platform-production`; it expects Redis, Kafka, and
-OpenSearch endpoints to be provided separately. The local Compose stack is for
-development and is not a production substitute for those managed services.
+Terraform provisions a three-AZ VPC (one NAT gateway per AZ), private EKS,
+Multi-AZ PostgreSQL RDS, three-broker MSK, encrypted Multi-AZ Redis, and a
+three-node VPC OpenSearch domain. It also configures External Secrets access,
+CloudWatch logs/metrics, alarms, and IAM roles for External Secrets and the AWS
+Load Balancer Controller. These are production-oriented managed-service
+defaults with significant ongoing AWS cost; review instance sizing and
+regional support before applying.
+
+The production Kustomize overlay deploys the product applications and
+autoscaling/disruption resources. Kafka Connect is a separate, manually
+synced Argo CD application so it can be brought up after the outbox schema and
+replication account exist. The ingress manifest remains a template until a
+real domain and ACM certificate are selected.
 
 ## Terraform
 
@@ -24,11 +32,10 @@ development and is not a production substitute for those managed services.
      -backend-config="use_lockfile=true"
    ```
 
-3. Supply `cluster_version` and `db_password` as protected CI variables
-   (`TF_VAR_cluster_version` and `TF_VAR_db_password`). Choose an EKS version
-   currently supported in the selected region. Do not put credentials in
-   `.tfvars` files committed to Git. Terraform state contains the RDS password
-   and must remain encrypted and access-controlled.
+3. Supply `cluster_version` as `TF_VAR_cluster_version`; choose an EKS version
+   currently supported in the selected region. Terraform uses RDS-managed
+   master credentials. The state backend must still be encrypted and
+   access-controlled.
 4. Review and apply:
 
    ```sh
@@ -38,47 +45,110 @@ development and is not a production substitute for those managed services.
 
 The EKS API endpoint is private-only, and the RDS security group accepts
 PostgreSQL only from EKS worker nodes. Run Terraform and `kubectl` from a
-network connected to the VPC. The RDS instance has deletion protection and
-retained final snapshots; plan intentional teardown separately.
+network connected to the VPC. RDS logical replication and forced TLS require a
+parameter-group reboot before CDC setup. The RDS, Redis, and OpenSearch
+resources have deletion safeguards; plan intentional teardown separately.
 
-## GitOps prerequisites
+### GitHub Actions
+
+`Validate infrastructure` checks Terraform formatting/validation, YAML,
+Kustomize, Compose, connector JSON, and shell syntax on changes.
+`Terraform deployment` is manual only. Configure the GitHub production
+environment with required reviewers and these Actions variables:
+
+- `TERRAFORM_AWS_ROLE_ARN`: least-privilege GitHub OIDC role for Terraform.
+- `AWS_REGION`: deployment region (the current Kubernetes SecretStore uses
+  `us-east-1`, so update it if you choose another region).
+- `TF_STATE_BUCKET` and `TF_STATE_KEY`: encrypted, versioned S3 state location.
+- `CLUSTER_VERSION`: supported EKS version.
+- `ALERT_EMAIL`: optional alarm subscription address.
+
+The Kubernetes SecretStore region and ExternalSecret remote keys must match
+Terraform. The manifests currently target `us-east-1` and the default
+`product-catalog-cluster` name; if you override either Terraform variable,
+update `kubernetes/cluster-config/cluster-secret-store.yaml` and the
+`remoteRef.key` values under `kubernetes/overlays/prod/` (including `cdc/`)
+before syncing Argo CD.
+
+The workflow plans by default. Choose `apply` only after reviewing the plan and
+approving the protected production environment. The workflow never runs
+automatically on a push.
+
+## GitOps bootstrap
 
 Before syncing the Argo CD root application:
 
-1. Verify both GHCR package names and access. The app repositories
-   publish `ghcr.io/jahrough/product-catalog` and
-   `ghcr.io/jahrough/product-search`. The production Application configures
-   Argo CD Image Updater to resolve `latest` to an image digest and write the
-   digest pin back to Git. Confirm Image Updater is installed and configured
-   with GHCR read access and narrowly scoped write access to this Git branch.
-   For private packages, configure cluster image-pull credentials as well.
-2. Before syncing workloads, create the `platform-production` namespace, then
-   copy [platform-runtime-config.example.yaml](./kubernetes/overlays/prod/platform-runtime-config.example.yaml),
-   replace all `REPLACE_WITH_*` values, and apply it. It defines
-   `platform-runtime-config` with these keys:
-   `DB_HOST` (RDS hostname only), `DB_PORT` (`5432`), `DB_NAME`
-   (`product_catalog`), `REDIS_HOST`, `REDIS_PORT`, `KAFKA_BOOTSTRAP_SERVERS`,
-   and `OPENSEARCH_URIS`. Set the service endpoints for your managed
-   infrastructure; this repository does not provision Redis, Kafka, or
-   OpenSearch for EKS. The catalog and search apps share this ConfigMap. The
-   example is intentionally not included in the Kustomize resources, so
-   placeholders cannot be accidentally deployed.
-3. Create the `platform-db` Secret in `platform-production` through your
-   secret-management controller. It must contain `username` and `password` for
-   a least-privilege application database account (not the RDS master account),
-   plus `url` (`jdbc:postgresql://<RDS hostname>:5432/product_catalog`) for the
-   search service. The catalog service reads the same credentials as
-   `DB_USER`/`DB_PASSWORD`; it constructs its JDBC URL from `DB_HOST`,
-   `DB_PORT`, and `DB_NAME` in `platform-runtime-config`. Do not commit Secret
-   values.
-4. Install and configure Argo CD in the cluster and grant it read access to
-   this Git repository. Bootstrap the root Application with
-   `kubectl apply -f argocd/root-app.yaml`. It creates the production child
-   Application, which syncs `kubernetes/overlays/prod`.
+1. Apply Terraform from a VPC-connected runner/operator and capture outputs:
 
-The app Services are cluster-internal `ClusterIP` Services. Configure an
-Ingress/Gateway and DNS separately if the applications need external traffic.
-The production HPA also requires the Kubernetes Metrics API.
+   ```sh
+   terraform output
+   ```
+
+2. Before application sync, create app database roles and Secrets Manager
+   values. Run the bootstrap script from a network that can reach RDS, using
+   the output secret ARN and names:
+
+   ```sh
+   bash scripts/bootstrap-app-databases.sh \
+     "$(terraform -chdir=terraform output -raw rds_endpoint)" \
+     "$(terraform -chdir=terraform output -raw rds_master_secret_arn)" \
+     "$(terraform -chdir=terraform output -raw app_database_secret_name)" \
+     "$(terraform -chdir=terraform output -raw search_database_secret_name)" \
+     us-east-1
+   ```
+
+   It prompts for per-service passwords, creates the least-privilege catalog
+   and search roles/database, and stores the credentials in Secrets Manager.
+   The generated DB credentials are not printed or committed.
+3. Install/configure Argo CD in the EKS cluster and grant read access to this
+   repository. In `argocd/apps/external-secrets-app.yaml`, replace the IRSA
+   role placeholder with Terraform's `external_secrets_irsa_role_arn` output.
+   In `argocd/apps/aws-load-balancer-controller-app.yaml`, replace the role,
+   VPC, cluster name, and region placeholders with Terraform outputs/variables.
+   These manifests are watched by the root Application.
+4. Bootstrap the root Application:
+
+   ```sh
+   kubectl apply -f argocd/root-app.yaml
+   ```
+
+   The app-of-apps creates External Secrets Operator, the AWS Load Balancer
+   Controller, Metrics Server, a ClusterSecretStore, and the production
+   workload Application.
+   The production runtime config, Redis token, and DB credentials are synced
+   from Secrets Manager into Kubernetes. Ensure Argo Image Updater is installed
+   and has GHCR read access and narrowly scoped Git write access; the images
+   are `ghcr.io/jahrough/product-catalog` and
+   `ghcr.io/jahrough/product-search`.
+5. To expose the apps, obtain an ACM certificate for a real DNS domain, replace
+   the host and certificate placeholders in
+   `kubernetes/overlays/prod/ingress.example.yaml`, then add that manifest to
+   the production Kustomization and commit it. Create Route 53 aliases for the
+   resulting ALB. No hostname is guessed or deployed by default.
+6. After the catalog migrations have created `public.outbox`, set up the CDC
+   database role and credential:
+
+   ```sh
+   bash scripts/bootstrap-cdc-user.sh \
+     "$(terraform -chdir=terraform output -raw rds_endpoint)" \
+     "$(terraform -chdir=terraform output -raw rds_master_secret_arn)" \
+     "$(terraform -chdir=terraform output -raw cdc_database_secret_name)" \
+     us-east-1
+   ```
+
+   Then manually sync the `product-cdc` Argo CD Application and register the
+   connector from a machine that can reach its internal REST service:
+
+   ```sh
+   bash scripts/register-outbox-connector.sh
+   ```
+
+The `rds.logical_replication` parameter requires a reboot before running the
+CDC bootstrap script. The application and Connect Services are internal
+`ClusterIP`s. Metrics Server supplies the EKS Metrics API for HPA; the EKS
+CloudWatch Observability add-on ships cluster logs and container metrics to
+CloudWatch. Configure
+CloudWatch alarm email subscriptions by confirming the SNS email request.
 
 ## Local Compose
 

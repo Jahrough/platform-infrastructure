@@ -13,13 +13,17 @@ variable "cluster_version" {
   type        = string
 }
 
-variable "db_password" {
-  description = "PostgreSQL master password. Supply it through a secure CI secret or TF_VAR_db_password."
+variable "alert_email" {
+  description = "Optional email address for production infrastructure alarms."
   type        = string
-  sensitive   = true
+  default     = null
 
   validation {
-    condition     = length(var.db_password) >= 16 && length(var.db_password) <= 128
-    error_message = "db_password must be between 16 and 128 characters."
+    condition = (
+      var.alert_email == null ||
+      trimspace(var.alert_email) == "" ||
+      can(regex("^[^@ ]+@[^@ ]+\\.[^@ ]+$", var.alert_email))
+    )
+    error_message = "alert_email must be a valid email address when set."
   }
 }
