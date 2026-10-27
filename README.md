@@ -136,6 +136,13 @@ development and operator use until the product-catalog service repository
 owns and publishes the connector configuration. The service remains the
 authority for outbox schema and event semantics.
 
+The connector expands the JSON text payload and reads the outbox
+`schema_version` column as Kafka Connect schema-version metadata. The
+`table.field.event.schema.version` option names a source column; it is not a
+literal version number. Product Search separately validates the JSON event
+body against its checked-in schema because the JSON converter is configured
+without embedded Connect schemas or a Schema Registry.
+
 ## Local development
 
 Requirements: Docker Engine with Docker Compose v2. To start the dependencies
