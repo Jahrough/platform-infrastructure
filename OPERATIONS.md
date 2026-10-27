@@ -5,6 +5,13 @@ this repository. Execute restore procedures in an isolated recovery
 environment first. A successful command is not proof of application
 consistency; validate the recovered data and workload before routing traffic.
 
+Terraform owns the AWS infrastructure and cloud-side permissions;
+`platform-gitops` is intended to own Kubernetes desired state, and service
+repositories own application behavior and data migrations. This repository
+currently contains Kubernetes and Argo CD declarations as well. Before
+changing or recovering workloads, confirm which source currently reconciles
+each resource; do not enable overlapping Argo CD roots.
+
 ## Signals and ownership
 
 - The Terraform-managed CloudWatch dashboard is named

@@ -4,6 +4,22 @@ This runbook provisions private AWS infrastructure and deploys its workloads
 in stages. It does not imply that any AWS resource or Kubernetes workload
 already exists.
 
+## Ownership and source selection
+
+Terraform in this repository owns AWS infrastructure and its lifecycle.
+`platform-gitops` is intended to own Argo CD configuration and Kubernetes
+desired state, while individual service repositories own application
+behavior, migrations, and event contracts. This repository currently also
+contains Argo CD and Kubernetes declarations, so that intended separation is
+not yet reflected in all repository contents.
+
+Before bootstrapping or syncing Argo CD, inventory existing Applications and
+their managed resources, choose one authoritative source for each resource,
+and agree on a migration. Do not run both repositories' roots against the
+same cluster resources. The Argo CD and manifest commands later in this
+runbook refer to the current in-repository configuration; use them only after
+the ownership check and review.
+
 ## Platform components and cost
 
 Terraform provisions a three-AZ VPC with one NAT gateway per AZ, private EKS,

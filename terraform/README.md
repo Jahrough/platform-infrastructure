@@ -23,6 +23,25 @@ and EKS node security group as inputs. It exposes the private RDS endpoint,
 instance identifier, and AWS-managed master-secret ARN. It does not expose
 database password values.
 
+## Ownership and downstream contract
+
+Terraform owns the AWS resources composed by this root, including the EKS
+cluster foundations, AWS add-ons configured through the EKS module, managed
+data services, IAM roles/policies, Secrets Manager resources, and
+infrastructure outputs. It does not define application Deployments, Services,
+Argo CD Applications, application schemas, or business behavior.
+
+The repository currently also contains Argo CD and Kubernetes manifests.
+`platform-gitops` is the intended owner of those Kubernetes resources, but
+moving ownership requires an explicit inventory and migration plan. Avoid
+simultaneous reconciliation of the same resources from both repositories.
+
+Outputs are handoff metadata for authorized operators and GitOps
+configuration: cluster and VPC identifiers, private service endpoints, secret
+names/ARNs, and controller role ARNs. They are not a substitute for
+credentials. Keep secret values out of outputs, Git, and logs; Terraform state
+remains sensitive even when outputs omit those values.
+
 ## State and migration safety
 
 The root's `04-rds.tf` includes moved blocks mapping the former root-level

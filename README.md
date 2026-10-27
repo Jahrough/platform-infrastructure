@@ -1,15 +1,21 @@
 # Platform Infrastructure
 
-Infrastructure-as-code, Kubernetes manifests, GitOps configuration, and
-deployment automation for the Product Catalog platform. The repository
-provisions private AWS infrastructure and deploys the catalog, search, and
-change-data-capture (CDC) workloads.
+Terraform infrastructure-as-code and local development configuration for the
+Product Catalog platform. This repository provisions AWS foundations and
+managed services. It currently also contains Kubernetes manifests and Argo CD
+configuration; their intended long-term owner is the separate
+`platform-gitops` repository.
 
 > **Deployment status:** This repository describes infrastructure and
 > deployment configuration; it does not mean the resources have been created.
 > Terraform apply, Kubernetes deployment, and production service exposure are
 > explicit operator actions. Review the [deployment runbook](DEPLOYMENT.md)
 > before deploying.
+
+> **Ownership transition:** Do not configure both repositories' Argo CD roots
+> to reconcile the same cluster resources. The Kubernetes and Argo CD files
+> currently present here must be inventoried and deliberately transitioned
+> before `platform-gitops` becomes the active source for those resources.
 
 ## Contents
 
@@ -27,7 +33,7 @@ change-data-capture (CDC) workloads.
 
 ```text
                          GitHub repository
-                 Terraform / Kubernetes / Argo CD
+               Terraform foundations / GitOps desired state
                                   |
                                   v
                    Private Amazon EKS cluster
@@ -73,23 +79,22 @@ These are production-oriented managed services and can incur substantial
 ongoing charges. Review instance sizes, storage, backup retention, NAT data
 transfer, and regional service support before creating resources.
 
-### Kubernetes and GitOps
+### Ownership boundaries
 
-- Argo CD's root application watches `argocd/apps/` (app-of-apps).
-- External Secrets Operator synchronizes runtime and application credentials
-  from AWS Secrets Manager into Kubernetes.
-- The production Kustomize overlay deploys catalog and search workloads,
-  Services, HPAs, and PodDisruptionBudgets.
-- AWS Load Balancer Controller and Metrics Server are installed through Argo
-  CD applications.
-- Kafka Connect and the Debezium PostgreSQL connector are a separate,
-  **manually synced** application. Deploy CDC only after the catalog has
-  created its outbox table and its replication account has been bootstrapped.
-- Application Services are internal `ClusterIP`s. An example HTTPS Ingress is
-  provided but is not enabled by default.
-- Production images are digest-pinned in Kustomize. Replace the fail-closed
-  zero digest values with real GHCR digests before syncing the production
-  applications.
+| Owner | Responsibility |
+| --- | --- |
+| This repository (`platform-infrastructure`) | Terraform-managed AWS foundations, networking, EKS infrastructure and AWS add-ons, managed data services, IAM, secrets storage, and infrastructure outputs. Compose supports AWS-independent local development. |
+| `platform-gitops` | Argo CD projects/applications and Kubernetes desired state: controllers, application Deployments and Services, External Secrets resources, policies, ingress, and rollout configuration. |
+| Individual service repositories | Application behavior, APIs, tests, database migrations and schemas, event contracts, and service-specific instrumentation. |
+
+This repository still contains Kubernetes manifests and Argo CD definitions,
+so the ownership boundary has not yet been completed in the repository
+contents. Treat those declarations as a transition requiring an explicit
+resource inventory and migration; do not have two Argo CD sources manage the
+same resource. Terraform may provision cloud identities and permissions used
+by GitOps-installed controllers, but it should not manage the same Kubernetes
+resources that Argo CD reconciles. The deployment runbook documents the
+current in-repository procedures and their prerequisites.
 
 ## Repository layout
 
