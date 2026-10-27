@@ -1,2 +1,0 @@
-# platform-infrastructure
-platform-infrastructure

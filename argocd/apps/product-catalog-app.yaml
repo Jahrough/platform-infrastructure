@@ -1,0 +1,28 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: platform-production
+  namespace: argocd
+  annotations:
+    argocd-image-updater.argoproj.io/image-list: >-
+      catalog=ghcr.io/jahrough/product-catalog:latest,
+      search=ghcr.io/jahrough/product-search:latest
+    argocd-image-updater.argoproj.io/catalog.update-strategy: digest
+    argocd-image-updater.argoproj.io/search.update-strategy: digest
+    argocd-image-updater.argoproj.io/write-back-method: git
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/Jahrough/platform-infrastructure.git
+    targetRevision: main
+    path: kubernetes/overlays/prod
+  destination:
+    server: 'https://kubernetes.default.svc'
+    namespace: platform-production
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+    automated:
+      prune: true
+      selfHeal: true

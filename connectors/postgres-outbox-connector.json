@@ -1,0 +1,26 @@
+{
+  "name": "product-outbox-connector",
+  "config": {
+    "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+    "tasks.max": "1",
+    "plugin.name": "pgoutput",
+    "database.hostname": "postgres",
+    "database.port": "5432",
+    "database.user": "postgres",
+    "database.password": "${env:POSTGRES_PASSWORD}",
+    "database.dbname": "product_catalog",
+    "database.server.name": "catalog-server",
+    "table.include.list": "public.outbox",
+    "slot.name": "debezium_product_outbox_slot",
+    "publication.name": "debezium_product_outbox_pub",
+    "publication.autocreate.mode": "filtered",
+    "tombstones.on.delete": "false",
+    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "value.converter.schemas.enable": "false",
+    "transforms": "outbox",
+    "transforms.outbox.type": "io.debezium.transforms.outbox.EventRouter",
+    "transforms.outbox.table.field.event.key": "aggregate_id",
+    "transforms.outbox.table.field.event.type": "event_type",
+    "transforms.outbox.route.topic.replacement": "product-events"
+  }
+}
