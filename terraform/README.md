@@ -31,10 +31,10 @@ data services, IAM roles/policies, Secrets Manager resources, and
 infrastructure outputs. It does not define application Deployments, Services,
 Argo CD Applications, application schemas, or business behavior.
 
-The repository currently also contains Argo CD and Kubernetes manifests.
-`platform-gitops` is the intended owner of those Kubernetes resources, but
-moving ownership requires an explicit inventory and migration plan. Avoid
-simultaneous reconciliation of the same resources from both repositories.
+Argo CD Applications and Kubernetes manifests are maintained in the separate
+`platform-gitops` repository. A source-code move does not establish whether an
+older Argo CD root is active in a cluster; inventory live ownership and
+complete a deliberate handoff before syncing the GitOps repository.
 
 Outputs are handoff metadata for authorized operators and GitOps
 configuration: cluster and VPC identifiers, private service endpoints, secret
@@ -61,11 +61,10 @@ this repository documentation.
 
 ## Environment strategy
 
-The ignored `environments/` directory is not an implemented environment
-layout. Do not create isolated environment roots until account/region
-boundaries, budgets, deployment roles, private operator access, and the
-existing production state ownership are confirmed. Keep the current root as
-the production composition in the interim.
+There are no implemented environment-specific roots. Do not create isolated
+environment roots until account/region boundaries, budgets, deployment
+roles, private operator access, and existing production state ownership are
+confirmed. Keep the current root as the production composition in the interim.
 
 New environments should use distinct state keys and narrowly scoped AWS
 roles. They should compose the shared modules with explicit, validated

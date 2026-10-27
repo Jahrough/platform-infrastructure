@@ -1,5 +1,0 @@
----
-resources:
-  - namespace.yaml
-  - product-catalog.yaml
-  - product-search.yaml

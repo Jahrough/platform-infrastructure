@@ -7,18 +7,16 @@ already exists.
 ## Ownership and source selection
 
 Terraform in this repository owns AWS infrastructure and its lifecycle.
-`platform-gitops` is intended to own Argo CD configuration and Kubernetes
-desired state, while individual service repositories own application
-behavior, migrations, and event contracts. This repository currently also
-contains Argo CD and Kubernetes declarations, so that intended separation is
-not yet reflected in all repository contents.
+`platform-gitops` owns Argo CD configuration and Kubernetes desired state,
+while individual service repositories own application behavior, migrations,
+and event contracts.
 
 Before bootstrapping or syncing Argo CD, inventory existing Applications and
 their managed resources, choose one authoritative source for each resource,
 and agree on a migration. Do not run both repositories' roots against the
 same cluster resources. The Argo CD and manifest commands later in this
-runbook refer to the current in-repository configuration; use them only after
-the ownership check and review.
+runbook operate on the separate `platform-gitops` checkout and require that
+ownership check and review.
 
 ## Platform components and cost
 
@@ -141,20 +139,21 @@ Do not print, commit, or pass generated passwords on command lines.
 
 ## 4. Configure Argo CD from Terraform outputs
 
-Install Argo CD in EKS and grant it read access to this repository. Generate
-the IAM role ARNs, cluster/VPC names, AWS region, and Secrets Manager name
-prefix from applied Terraform outputs:
+Install Argo CD in EKS and grant it read access to `platform-gitops`. Generate
+the IAM role ARNs, cluster/VPC names, AWS region, and Secrets Manager
+identifiers from applied Terraform outputs:
 
 ```sh
-python3 scripts/configure-argocd-from-terraform.py
-git diff -- argocd/apps kubernetes/cluster-config kubernetes/overlays/prod
+python3 scripts/configure-argocd-from-terraform.py \
+  --gitops-repo ../platform-gitops
+git -C ../platform-gitops diff
 ```
 
 The script requires an initialized Terraform directory with applied outputs.
-It writes only non-secret infrastructure identifiers into the Argo CD and
-External Secrets manifests. Review and commit these changes so the GitOps
-source contains the configured values. Re-run after changing the cluster name
-or region.
+It writes only non-secret infrastructure identifiers into GitOps
+configuration. Review and commit these changes so the GitOps source contains
+the configured values. Re-run after changing cluster, region, or secret
+identifiers.
 
 ## 5. Pin images and deploy the applications
 
@@ -162,21 +161,21 @@ Before syncing production, obtain reviewed image digests from the published
 GHCR images and replace all fail-closed zero digest pins:
 
 ```sh
-python3 scripts/set-image-digests.py \
+python3 ../platform-gitops/scripts/set-image-digests.py \
   --catalog-digest sha256:CATALOG_IMAGE_DIGEST \
   --search-digest sha256:SEARCH_IMAGE_DIGEST \
   --connect-digest sha256:KAFKA_CONNECT_IMAGE_DIGEST
 ```
 
-Commit the resulting Kustomize changes. The example all-zero digests
-intentionally cannot be pulled. Argo CD Image Updater is configured to write
-future digest updates to Kustomize; install/configure it with GHCR read access
-and narrowly scoped Git write access.
+Commit the resulting GitOps values and CDC Kustomize changes. The example
+all-zero digests intentionally cannot be pulled. Image promotion uses
+reviewed Git changes; this repository does not configure Image Updater.
 
-Apply the app-of-apps root:
+After an authorized review of existing Argo CD ownership, apply the GitOps
+root Application:
 
 ```sh
-kubectl apply -f argocd/root-app.yaml
+kubectl apply -f ../platform-gitops/argocd/bootstrap/root-app.yaml
 ```
 
 Verify External Secrets Operator and the ClusterSecretStore are healthy,
@@ -198,15 +197,15 @@ ingress. Obtain an ACM certificate in the deployment region for a domain you
 control, then generate the ingress:
 
 ```sh
-python3 scripts/enable-ingress.py \
+python3 ../platform-gitops/scripts/enable-ingress.py \
   --domain example.com \
   --certificate-arn arn:aws:acm:us-east-1:123456789012:certificate/00000000-0000-0000-0000-000000000000 \
   --region us-east-1 \
   --scheme internet-facing
 ```
 
-The command writes `kubernetes/overlays/prod/ingress.yaml` and adds it to the
-production Kustomization. Review and commit those changes. The default
+The command enables ingress in the GitOps production values. Review and
+commit that change. The default
 `internet-facing` scheme exposes the apps publicly; use `--scheme internal`
 for a private ALB. After the controller provisions the ALB, create DNS aliases
 for the catalog/search hostnames and verify HTTPS and health checks.
