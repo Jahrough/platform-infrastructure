@@ -11,19 +11,19 @@ variable "cluster_name" {
 variable "cluster_version" {
   description = "Kubernetes version supported by EKS in the selected AWS region."
   type        = string
+
+  validation {
+    condition     = can(regex("^1\\.[0-9]+$", var.cluster_version))
+    error_message = "cluster_version must be a Kubernetes minor version such as 1.33."
+  }
 }
 
 variable "alert_email" {
-  description = "Optional email address for production infrastructure alarms."
+  description = "Email address for production infrastructure alarm notifications."
   type        = string
-  default     = null
 
   validation {
-    condition = (
-      var.alert_email == null ||
-      trimspace(var.alert_email) == "" ||
-      can(regex("^[^@ ]+@[^@ ]+\\.[^@ ]+$", var.alert_email))
-    )
-    error_message = "alert_email must be a valid email address when set."
+    condition     = can(regex("^[^@ ]+@[^@ ]+\\.[^@ ]+$", var.alert_email))
+    error_message = "alert_email must be a valid email address."
   }
 }

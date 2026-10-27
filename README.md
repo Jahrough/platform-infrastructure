@@ -60,12 +60,14 @@ Terraform defines:
 - A three-broker Amazon MSK cluster using TLS client connections.
 - Encrypted, TLS-enabled, Multi-AZ ElastiCache Redis with an AUTH token.
 - A private, encrypted, three-node OpenSearch domain with HTTPS.
+- Production egress NetworkPolicies for catalog, search, and Kafka Connect,
+  enforced by the EKS VPC CNI network-policy controller.
 - AWS Secrets Manager secrets and narrowly scoped IRSA access for External
   Secrets Operator; an IRSA role for AWS Load Balancer Controller is also
   defined.
-- CloudWatch logging/metrics configuration, log retention, and alarms for
-  selected managed-service health conditions. Email alarm subscriptions are
-  optional.
+- A CloudWatch platform dashboard and alarms for selected RDS, Redis,
+  OpenSearch, and MSK health/capacity signals. A required SNS email
+  subscription provides an explicit notification owner.
 
 These are production-oriented managed services and can incur substantial
 ongoing charges. Review instance sizes, storage, backup retention, NAT data
@@ -85,6 +87,9 @@ transfer, and regional service support before creating resources.
   created its outbox table and its replication account has been bootstrapped.
 - Application Services are internal `ClusterIP`s. An example HTTPS Ingress is
   provided but is not enabled by default.
+- Production images are digest-pinned in Kustomize. Replace the fail-closed
+  zero digest values with real GHCR digests before syncing the production
+  applications.
 
 ## Repository layout
 
@@ -102,6 +107,8 @@ transfer, and regional service support before creating resources.
 | `connectors/` | Debezium outbox connector definition |
 | `scripts/` | Database and CDC bootstrap, connector registration, and manifest validation scripts |
 | `.github/workflows/` | CI validation, protected Terraform workflow, and Kafka Connect image publishing |
+| `.github/aws/` | GitHub Actions OIDC trust-policy example |
+| `OPERATIONS.md` | Monitoring, incident triage, network policy validation, and recovery exercises |
 | `DEPLOYMENT.md` | Detailed production setup, bootstrap ordering, and operator commands |
 
 ## Prerequisites
@@ -129,6 +136,8 @@ when you want Compose to build the applications.
   access. The Terraform state includes sensitive infrastructure values.
 - A GitHub Actions OIDC role for Terraform, plus a protected GitHub
   `production` environment and required reviewers for applies.
+- AWS permissions to bootstrap the Terraform state bucket and create the OIDC
+  deployment role.
 - Argo CD installed in the cluster and repository access configured.
 - Argo CD Image Updater installed and granted GHCR read access and narrowly
   scoped Git write access if automated image updates are desired.
@@ -171,9 +180,39 @@ deployment.
 
 ## AWS infrastructure
 
-The Terraform backend is intentionally configured externally. Create and
-secure the state bucket before initializing Terraform. From the `terraform/`
-directory:
+The Terraform backend is intentionally configured externally. Create and secure the state bucket before initializing Terraform. The helper
+uses the caller's AWS CLI identity and enables versioning, server-side
+encryption, public-access blocking, owner-enforced object ownership, and a
+TLS-only bucket policy:
+
+```sh
+bash scripts/bootstrap-terraform-state.sh \
+  YOUR_GLOBALLY_UNIQUE_STATE_BUCKET \
+  us-east-1
+```
+
+Run it using an administrative bootstrap identity, then restrict bucket and
+lock-file access to the Terraform deployment role. Create a GitHub OIDC
+provider in IAM if the AWS account does not already have one. Use
+`.github/aws/terraform-oidc-trust-policy.example.json` as the trust-policy
+starting point; replace the AWS account ID and scope the subject to the
+`production` GitHub environment. Attach a reviewed, least-privilege
+permissions policy for this Terraform stack and the specific state bucket.
+The workflow verifies its configured identity and version but cannot prove
+that every future apply action is authorized until Terraform plans/applies
+the relevant resources.
+
+Discover an EKS version currently supported in the chosen region, then set it
+as `TF_VAR_cluster_version`:
+
+```sh
+aws eks describe-cluster-versions \
+  --region us-east-1 \
+  --query 'clusterVersions[?status==`STANDARD_SUPPORT`].clusterVersion' \
+  --output table
+```
+
+From the `terraform/` directory, initialize the S3 backend:
 
 ```sh
 terraform init \
@@ -184,10 +223,15 @@ terraform init \
   -backend-config="use_lockfile=true"
 ```
 
+The state bucket can be bootstrapped with `scripts/bootstrap-terraform-state.sh`.
+An AWS OIDC trust-policy example is in `.github/aws/`; the stack permissions
+policy still must be reviewed and attached by an AWS administrator.
+
 Set a supported EKS version and review the plan:
 
 ```sh
 export TF_VAR_cluster_version='SUPPORTED_EKS_VERSION'
+export TF_VAR_alert_email='oncall@example.com'
 terraform validate
 terraform plan
 ```
@@ -205,7 +249,7 @@ Terraform variables:
 | `aws_region` | `us-east-1` | AWS region for infrastructure |
 | `cluster_name` | `product-catalog-cluster` | EKS cluster name and resource-name prefix |
 | `cluster_version` | Required | EKS Kubernetes version supported in the chosen region |
-| `alert_email` | `null` | Optional email endpoint for SNS alarm notifications |
+| `alert_email` | Required | SNS alarm notification owner email |
 
 See `terraform/outputs.tf` for cluster, service endpoint, secret-name, and IRSA
 role outputs. Do not publish output values containing secrets. Use
@@ -225,29 +269,57 @@ Production setup is deliberately staged. At a high level:
 
 1. Configure and initialize encrypted remote Terraform state; provision
    infrastructure from a VPC-connected operator.
-2. Create the catalog and search application DB accounts and put their
-   credentials in Secrets Manager with
-   `scripts/bootstrap-app-databases.sh`.
-3. Configure the Terraform-derived IRSA role, VPC, cluster, and region values
-   in the Argo CD application manifests.
-4. Install Argo CD and apply `argocd/root-app.yaml`. Confirm External Secrets
+2. Bootstrap the app database accounts and store their credentials in
+   Secrets Manager with `scripts/bootstrap-app-databases.sh`.
+3. Generate Argo CD and External Secrets settings from Terraform outputs:
+
+   ```sh
+   python3 scripts/configure-argocd-from-terraform.py
+   git diff -- argocd/apps kubernetes/cluster-config kubernetes/overlays/prod
+   ```
+
+   Review and commit the generated non-secret values before Argo CD reads the
+   repository. Re-run the generator after changing Terraform's cluster or
+   region configuration.
+4. Pin production images by digest before syncing:
+
+   ```sh
+   python3 scripts/set-image-digests.py \
+     --catalog-digest sha256:CATALOG_IMAGE_DIGEST \
+     --search-digest sha256:SEARCH_IMAGE_DIGEST \
+     --connect-digest sha256:KAFKA_CONNECT_IMAGE_DIGEST
+   ```
+
+   Obtain the digests from reviewed GHCR release images and commit the
+   resulting Kustomize changes. The example zero digests intentionally cannot
+   be pulled. Argo CD Image Updater is configured to write later digest
+   updates to Kustomize.
+5. Install Argo CD and apply `argocd/root-app.yaml`. Confirm External Secrets
    has synchronized required secrets before application workloads start.
-5. Configure Argo CD Image Updater and GHCR access if image automation is
+6. Configure Argo CD Image Updater and GHCR access if image automation is
    required.
-6. After catalog migrations create `public.outbox`, reboot RDS if required,
+7. After catalog migrations create `public.outbox`, reboot RDS if required,
    create the CDC user with `scripts/bootstrap-cdc-user.sh`, manually sync
    `product-cdc`, then register the connector with
    `scripts/register-outbox-connector.sh`.
-7. For public access, configure the example Ingress with a real DNS hostname
-   and ACM certificate, add it to the production Kustomization, and create
-   the corresponding DNS aliases.
+8. For public access, use a real DNS zone and ACM certificate to render and
+   enable the example Ingress:
 
-**Configuration alignment:** The current External Secrets manifests use
-`us-east-1` and secret names prefixed with the default
-`product-catalog-cluster`. If you change `aws_region` or `cluster_name`, update
-`kubernetes/cluster-config/cluster-secret-store.yaml` and the
-`remoteRef.key` values in production ExternalSecrets (including the CDC
-overlay) before syncing Argo CD.
+   ```sh
+   python3 scripts/enable-ingress.py \
+     --domain example.com \
+     --certificate-arn arn:aws:acm:us-east-1:123456789012:certificate/00000000-0000-0000-0000-000000000000 \
+     --region us-east-1 \
+     --scheme internet-facing
+   ```
+
+   Review and commit the generated Ingress and Kustomize changes, then create
+   Route 53 aliases for the provisioned ALB. Choose `--scheme internal` for
+   private-only access.
+
+The generator keeps External Secrets region and secret prefixes aligned with
+Terraform outputs. Do not sync the production applications until it has run
+and every required image digest has been replaced.
 
 The complete, ordered commands and detailed prerequisites are in
 [DEPLOYMENT.md](DEPLOYMENT.md). Do not skip the bootstrap steps: Terraform
@@ -281,8 +353,14 @@ POSTGRES_PASSWORD=validation-only-password \
   docker compose -f compose/compose.yml -f compose/compose.apps.yaml config --quiet
 python3 -m json.tool connectors/postgres-outbox-connector.json >/dev/null
 for file in scripts/*.sh; do bash -n "$file"; done
+python3 -m py_compile scripts/*.py
 git diff --check
 ```
+
+Before deploying production manifests, run
+`python3 scripts/validate-production-config.py`. It fails while Terraform
+tokens, ingress placeholders in active configuration, or zero image digests
+remain.
 
 From `terraform/`, run:
 
@@ -307,7 +385,7 @@ Configure these GitHub Actions environment variables:
 | `TF_STATE_BUCKET` | Encrypted, versioned Terraform state bucket |
 | `TF_STATE_KEY` | Unique Terraform state object key |
 | `CLUSTER_VERSION` | Supported EKS version |
-| `ALERT_EMAIL` | Optional SNS email subscription |
+| `ALERT_EMAIL` | Required SNS alarm notification owner email |
 
 Protect the `production` environment with reviewers and ensure the OIDC role
 has only the permissions required to manage this stack.
@@ -331,13 +409,26 @@ maintenance.
 - EKS workloads use non-root identities, restricted container security
   contexts, resource requests/limits, and health probes where configured.
 - Managed data services use private networking and encryption/TLS as
-  configured. OpenSearch access is additionally limited at the VPC security
-  group boundary; keep that boundary private and controlled.
-- Configure and confirm the optional SNS email subscription if alarms should
-  page an operator. Establish ownership for CloudWatch logs, alarms, backups,
-  and restore testing.
-- The HPA requires Metrics Server. Recovery objectives and a tested RDS and
-  application restore procedure should be established before production use.
+  configured. Production NetworkPolicies restrict workload egress to DNS and
+  the required managed-service ports; security groups remain an additional
+  boundary.
+- **Protocol authentication is not yet enabled for MSK or OpenSearch.** MSK
+  accepts TLS connections from the EKS node security group without SASL/IAM
+  client authentication, and OpenSearch fine-grained authentication is
+  disabled. Network policies reduce reachability but do not provide
+  per-client identity. Enable authenticated protocols only after the
+  application clients support and test them.
+- Confirm the required SNS email subscription and assign a primary and backup
+  owner. Terraform creates a CloudWatch dashboard and selected resource
+  alarms; application dashboards and full on-call coverage still need setup.
+- EKS CloudWatch Observability collects container logs/metrics, but no
+  OpenTelemetry trace collector/backend or application metrics scraper is
+  installed.
+- RDS has seven days of automated backup retention. Run the isolated restore
+  exercise in [OPERATIONS.md](OPERATIONS.md) before production and on a
+  schedule. Cross-region backup replication and automatic regional failover
+  are not provisioned; set RPO/RTO with the service owner before claiming
+  disaster recovery.
 - Application and Kafka Connect REST Services are internal. Restrict access to
   the connector registration endpoint to trusted operators and workloads.
 
@@ -348,17 +439,21 @@ maintenance.
   from the active production overlay until configured.
 - Argo CD, Argo CD Image Updater, and the GHCR access policy must be installed
   or configured by the operator. Terraform does not install Argo CD itself.
-- External Secrets' region and remote secret names currently assume the
-  Terraform defaults; keep them aligned if changing the region or cluster
-  name.
+- `scripts/configure-argocd-from-terraform.py` writes the current region,
+  cluster/secret prefix, VPC, and controller IRSA outputs to deployment
+  manifests. Run it after apply and whenever those Terraform settings change,
+  then review and commit the generated non-secret values.
 - Kafka Connect CDC is intentionally not automatically deployed. It depends
   on application migrations and a PostgreSQL replication user/publication.
 - Dev and staging overlays provide Kubernetes configuration, not separate
   Terraform-managed AWS environments.
 - The managed-service architecture has significant costs; run a reviewed
   Terraform plan and estimate expected monthly spend before applying.
-- Dashboards, distributed tracing, centralized application-log configuration,
-  and a complete on-call/runbook program are not fully supplied here.
+- Application dashboards, distributed tracing, cross-region disaster
+  recovery, and a complete on-call program are not fully supplied here. The
+  infrastructure dashboard, selected alarms, log collection, and recovery
+  exercise instructions are included, but must be validated in a deployed AWS
+  environment. See [OPERATIONS.md](OPERATIONS.md).
 - AWS service versions, chart versions, GitHub Actions, and application image
   tags should be reviewed and updated through normal dependency and security
   maintenance.

@@ -280,6 +280,137 @@ resource "aws_cloudwatch_metric_alarm" "msk_offline_partitions" {
   ok_actions    = var.alert_email == null || trimspace(var.alert_email) == "" ? [] : [aws_sns_topic.alerts[0].arn]
 }
 
+resource "aws_cloudwatch_metric_alarm" "rds_low_storage" {
+  alarm_name          = "${var.cluster_name}-rds-low-storage"
+  alarm_description   = "RDS free storage is below 5 GiB"
+  namespace           = "AWS/RDS"
+  metric_name         = "FreeStorageSpace"
+  statistic           = "Average"
+  period              = 300
+  evaluation_periods  = 2
+  threshold           = 5368709120
+  comparison_operator = "LessThanThreshold"
+  dimensions = {
+    DBInstanceIdentifier = aws_db_instance.postgres.identifier
+  }
+  alarm_actions = var.alert_email == null || trimspace(var.alert_email) == "" ? [] : [aws_sns_topic.alerts[0].arn]
+  ok_actions    = var.alert_email == null || trimspace(var.alert_email) == "" ? [] : [aws_sns_topic.alerts[0].arn]
+}
+
+resource "aws_cloudwatch_metric_alarm" "rds_connections" {
+  alarm_name          = "${var.cluster_name}-rds-high-connections"
+  alarm_description   = "RDS has more than 80 concurrent client connections"
+  namespace           = "AWS/RDS"
+  metric_name         = "DatabaseConnections"
+  statistic           = "Maximum"
+  period              = 300
+  evaluation_periods  = 2
+  threshold           = 80
+  comparison_operator = "GreaterThanThreshold"
+  dimensions = {
+    DBInstanceIdentifier = aws_db_instance.postgres.identifier
+  }
+  alarm_actions = var.alert_email == null || trimspace(var.alert_email) == "" ? [] : [aws_sns_topic.alerts[0].arn]
+  ok_actions    = var.alert_email == null || trimspace(var.alert_email) == "" ? [] : [aws_sns_topic.alerts[0].arn]
+}
+
+resource "aws_cloudwatch_metric_alarm" "redis_cpu" {
+  alarm_name          = "${var.cluster_name}-redis-high-cpu"
+  alarm_description   = "Redis CPU utilization exceeds 80 percent"
+  namespace           = "AWS/ElastiCache"
+  metric_name         = "CPUUtilization"
+  statistic           = "Average"
+  period              = 300
+  evaluation_periods  = 3
+  threshold           = 80
+  comparison_operator = "GreaterThanThreshold"
+  dimensions = {
+    ReplicationGroupId = aws_elasticache_replication_group.platform.id
+  }
+  alarm_actions = var.alert_email == null || trimspace(var.alert_email) == "" ? [] : [aws_sns_topic.alerts[0].arn]
+  ok_actions    = var.alert_email == null || trimspace(var.alert_email) == "" ? [] : [aws_sns_topic.alerts[0].arn]
+}
+
+resource "aws_cloudwatch_metric_alarm" "redis_memory" {
+  alarm_name          = "${var.cluster_name}-redis-high-memory"
+  alarm_description   = "Redis memory usage exceeds 80 percent"
+  namespace           = "AWS/ElastiCache"
+  metric_name         = "DatabaseMemoryUsagePercentage"
+  statistic           = "Average"
+  period              = 300
+  evaluation_periods  = 3
+  threshold           = 80
+  comparison_operator = "GreaterThanThreshold"
+  dimensions = {
+    ReplicationGroupId = aws_elasticache_replication_group.platform.id
+  }
+  alarm_actions = var.alert_email == null || trimspace(var.alert_email) == "" ? [] : [aws_sns_topic.alerts[0].arn]
+  ok_actions    = var.alert_email == null || trimspace(var.alert_email) == "" ? [] : [aws_sns_topic.alerts[0].arn]
+}
+
+resource "aws_cloudwatch_metric_alarm" "opensearch_jvm_memory" {
+  alarm_name          = "${var.cluster_name}-opensearch-high-jvm-memory"
+  alarm_description   = "OpenSearch JVM memory pressure exceeds 80 percent"
+  namespace           = "AWS/ES"
+  metric_name         = "JVMMemoryPressure"
+  statistic           = "Maximum"
+  period              = 300
+  evaluation_periods  = 3
+  threshold           = 80
+  comparison_operator = "GreaterThanThreshold"
+  dimensions = {
+    DomainName = aws_opensearch_domain.platform.domain_name
+    ClientId   = data.aws_caller_identity.current.account_id
+  }
+  alarm_actions = var.alert_email == null || trimspace(var.alert_email) == "" ? [] : [aws_sns_topic.alerts[0].arn]
+  ok_actions    = var.alert_email == null || trimspace(var.alert_email) == "" ? [] : [aws_sns_topic.alerts[0].arn]
+}
+
+resource "aws_cloudwatch_dashboard" "platform" {
+  dashboard_name = "${var.cluster_name}-platform"
+  dashboard_body = jsonencode({
+    widgets = [
+      {
+        type   = "metric"
+        x      = 0
+        y      = 0
+        width  = 12
+        height = 6
+        properties = {
+          title  = "PostgreSQL"
+          region = var.aws_region
+          period = 300
+          stat   = "Average"
+          metrics = [
+            ["AWS/RDS", "CPUUtilization", "DBInstanceIdentifier", aws_db_instance.postgres.identifier],
+            [".", "FreeStorageSpace", ".", ".", { stat = "Minimum", yAxis = "right" }],
+            [".", "DatabaseConnections", ".", ".", { yAxis = "right" }],
+          ]
+        }
+      },
+      {
+        type   = "metric"
+        x      = 12
+        y      = 0
+        width  = 12
+        height = 6
+        properties = {
+          title  = "Managed data services"
+          region = var.aws_region
+          period = 300
+          stat   = "Average"
+          metrics = [
+            ["AWS/ElastiCache", "CPUUtilization", "ReplicationGroupId", aws_elasticache_replication_group.platform.id],
+            [".", "DatabaseMemoryUsagePercentage", ".", "."],
+            ["AWS/ES", "JVMMemoryPressure", "DomainName", aws_opensearch_domain.platform.domain_name, "ClientId", data.aws_caller_identity.current.account_id],
+            ["AWS/Kafka", "OfflinePartitionsCount", "Cluster Name", aws_msk_cluster.platform.cluster_name, { stat = "Maximum", yAxis = "right" }],
+          ]
+        }
+      },
+    ]
+  })
+}
+
 data "aws_caller_identity" "current" {}
 
 resource "aws_sns_topic" "alerts" {

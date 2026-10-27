@@ -13,15 +13,15 @@ spec:
     helm:
       releaseName: aws-load-balancer-controller
       values: |
-        clusterName: REPLACE_WITH_EKS_CLUSTER_NAME
-        region: REPLACE_WITH_AWS_REGION
-        vpcId: REPLACE_WITH_VPC_ID
+        clusterName: __EKS_CLUSTER_NAME__
+        region: __AWS_REGION__
+        vpcId: __VPC_ID__
         replicaCount: 2
         serviceAccount:
           create: true
           name: aws-load-balancer-controller
           annotations:
-            eks.amazonaws.com/role-arn: REPLACE_WITH_LOAD_BALANCER_CONTROLLER_IRSA_ROLE_ARN
+            eks.amazonaws.com/role-arn: __LOAD_BALANCER_CONTROLLER_IRSA_ROLE_ARN__
   destination:
     server: https://kubernetes.default.svc
     namespace: kube-system

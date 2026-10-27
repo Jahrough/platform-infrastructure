@@ -8,6 +8,16 @@ output "eks_cluster_name" {
   value       = module.eks.cluster_name
 }
 
+output "aws_region" {
+  description = "AWS region used by the platform and Kubernetes secret provider."
+  value       = var.aws_region
+}
+
+output "cluster_name" {
+  description = "Terraform cluster-name prefix used by AWS Secrets Manager."
+  value       = var.cluster_name
+}
+
 output "vpc_id" {
   description = "VPC ID used to configure AWS load balancer controller."
   value       = module.vpc.vpc_id

@@ -27,6 +27,10 @@ module "eks" {
   }
 
   cluster_addons = {
+    vpc-cni = {
+      before_compute       = true
+      configuration_values = jsonencode({ enableNetworkPolicy = "true" })
+    }
     eks-pod-identity-agent = {
       most_recent = true
     }

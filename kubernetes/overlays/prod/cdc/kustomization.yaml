@@ -4,4 +4,10 @@ kind: Kustomization
 resources:
   - kafka-connect.yaml
   - platform-cdc-db.external-secret.yaml
+  - network-policy.yaml
+
+images:
+  - name: ghcr.io/jahrough/platform-infrastructure/kafka-connect
+    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+
 namespace: platform-production

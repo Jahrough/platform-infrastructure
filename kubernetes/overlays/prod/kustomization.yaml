@@ -12,6 +12,13 @@ resources:
   - product-search-hpa.yaml
   - product-catalog-pdb.yaml
   - product-search-pdb.yaml
+  - network-policies.yaml
+
+images:
+  - name: ghcr.io/jahrough/product-catalog
+    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+  - name: ghcr.io/jahrough/product-search
+    digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
 
 namespace: platform-production
 

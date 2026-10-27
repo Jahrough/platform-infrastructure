@@ -11,6 +11,7 @@ metadata:
     argocd-image-updater.argoproj.io/catalog.update-strategy: digest
     argocd-image-updater.argoproj.io/search.update-strategy: digest
     argocd-image-updater.argoproj.io/write-back-method: git
+    argocd-image-updater.argoproj.io/write-back-target: kustomization
 spec:
   project: default
   ignoreDifferences:

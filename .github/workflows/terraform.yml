@@ -23,28 +23,59 @@ jobs:
     defaults:
       run:
         working-directory: terraform
+    env:
+      TERRAFORM_AWS_ROLE_ARN: ${{ vars.TERRAFORM_AWS_ROLE_ARN }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      TF_STATE_BUCKET: ${{ vars.TF_STATE_BUCKET }}
+      TF_STATE_KEY: ${{ vars.TF_STATE_KEY }}
+      CLUSTER_VERSION: ${{ vars.CLUSTER_VERSION }}
+      ALERT_EMAIL: ${{ vars.ALERT_EMAIL }}
     steps:
       - uses: actions/checkout@v4
+      - name: Validate deployment configuration
+        run: |
+          set -euo pipefail
+          test -n "$TERRAFORM_AWS_ROLE_ARN" || { echo "TERRAFORM_AWS_ROLE_ARN is required" >&2; exit 1; }
+          test -n "$AWS_REGION" || { echo "AWS_REGION is required" >&2; exit 1; }
+          test -n "$TF_STATE_BUCKET" || { echo "TF_STATE_BUCKET is required" >&2; exit 1; }
+          test -n "$TF_STATE_KEY" || { echo "TF_STATE_KEY is required" >&2; exit 1; }
+          test -n "$CLUSTER_VERSION" || { echo "CLUSTER_VERSION is required" >&2; exit 1; }
+          test -n "$ALERT_EMAIL" || { echo "ALERT_EMAIL is required for production alert ownership" >&2; exit 1; }
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.10.5
       - uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ vars.TERRAFORM_AWS_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION }}
+          role-to-assume: ${{ env.TERRAFORM_AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Verify AWS identity and EKS version support
+        run: |
+          set -euo pipefail
+          aws sts get-caller-identity
+          status="$(aws eks describe-cluster-versions \
+            --region "$AWS_REGION" \
+            --query "clusterVersions[?clusterVersion=='${CLUSTER_VERSION}'].status | [0]" \
+            --output text)"
+          case "$status" in
+            STANDARD_SUPPORT|EXTENDED_SUPPORT) ;;
+            *)
+              echo "EKS version $CLUSTER_VERSION is not supported in $AWS_REGION (status: $status)." >&2
+              exit 1
+              ;;
+          esac
       - name: Initialize remote state
         run: |
           terraform init -input=false \
-            -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
-            -backend-config="key=${{ vars.TF_STATE_KEY }}" \
-            -backend-config="region=${{ vars.AWS_REGION }}" \
+            -backend-config="bucket=${TF_STATE_BUCKET}" \
+            -backend-config="key=${TF_STATE_KEY}" \
+            -backend-config="region=${AWS_REGION}" \
             -backend-config="encrypt=true" \
             -backend-config="use_lockfile=true"
       - name: Plan infrastructure
         env:
-          TF_VAR_aws_region: ${{ vars.AWS_REGION }}
-          TF_VAR_cluster_version: ${{ vars.CLUSTER_VERSION }}
-          TF_VAR_alert_email: ${{ vars.ALERT_EMAIL }}
+          TF_VAR_aws_region: ${{ env.AWS_REGION }}
+          TF_VAR_cluster_version: ${{ env.CLUSTER_VERSION }}
+          TF_VAR_alert_email: ${{ env.ALERT_EMAIL }}
         run: terraform plan -input=false -out=tfplan
       - name: Apply reviewed plan
         if: inputs.operation == 'apply'

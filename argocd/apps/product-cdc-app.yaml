@@ -9,6 +9,7 @@ metadata:
       connect=ghcr.io/jahrough/platform-infrastructure/kafka-connect:latest
     argocd-image-updater.argoproj.io/connect.update-strategy: digest
     argocd-image-updater.argoproj.io/write-back-method: git
+    argocd-image-updater.argoproj.io/write-back-target: kustomization
 spec:
   project: default
   source:
