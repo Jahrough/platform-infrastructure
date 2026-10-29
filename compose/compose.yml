@@ -8,10 +8,16 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: >-
         ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the environment}
+      CDC_DATABASE_USER: ${CDC_DATABASE_USER:?Set CDC_DATABASE_USER in the environment}
+      CDC_DATABASE_PASSWORD: ${CDC_DATABASE_PASSWORD:?Set CDC_DATABASE_PASSWORD in the environment}
+      SEARCH_DATABASE_USER: ${SEARCH_DATABASE_USER:?Set SEARCH_DATABASE_USER in the environment}
+      SEARCH_DATABASE_PASSWORD: ${SEARCH_DATABASE_PASSWORD:?Set SEARCH_DATABASE_PASSWORD in the environment}
+    command: ["postgres", "-c", "wal_level=logical"]
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./initdb/10-local-cdc-and-search.sh:/docker-entrypoint-initdb.d/10-local-cdc-and-search.sh:ro
     networks:
       - platform-network
     healthcheck:
