@@ -7,3 +7,6 @@ crash.log
 crash.*.log
 *.tfvars
 !*.tfvars.example
+.env
+.env.*
+!.env.example
