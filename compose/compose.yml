@@ -116,8 +116,9 @@ services:
       CONNECT_CONFIG_PROVIDERS: env
       CONNECT_CONFIG_PROVIDERS_ENV_CLASS: >-
         org.apache.kafka.common.config.provider.EnvVarConfigProvider
-      POSTGRES_PASSWORD: >-
-        ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the environment}
+      CDC_DATABASE_HOST: postgres
+      CDC_DATABASE_USER: ${CDC_DATABASE_USER:?Set CDC_DATABASE_USER in the environment}
+      CDC_DATABASE_PASSWORD: ${CDC_DATABASE_PASSWORD:?Set CDC_DATABASE_PASSWORD in the environment}
     networks:
       - platform-network
 volumes:
