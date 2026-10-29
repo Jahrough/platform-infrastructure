@@ -229,7 +229,10 @@ Secret has synchronized. Register the connector from a trusted host that can
 reach its internal REST service:
 
 ```sh
-bash scripts/register-outbox-connector.sh
+bash scripts/register-outbox-connector.sh --env prod \
+  --url http://kafka-connect.platform-production.svc.cluster.local:8083 \
+  --file connectors/postgres-outbox-connector.json \
+  --confirm-prod product-outbox-connector
 ```
 
 Check connector status, MSK partition alarms, replication slots/publications,
