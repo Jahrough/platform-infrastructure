@@ -91,7 +91,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.kafka-connect
-    image: platform-kafka-connect:7.5.0-debezium-2.5.0
+    image: platform-kafka-connect:7.6.14-debezium-2.5.4
     container_name: product_kafka_connect
     depends_on:
       kafka:

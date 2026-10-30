@@ -32,7 +32,7 @@ services:
       dockerfile: Dockerfile
     container_name: product-search
     ports:
-      - "127.0.0.1:8081:8081"
+      - "127.0.0.1:8084:8081"
     environment:
       - OPENSEARCH_URIS=http://elasticsearch:9200
       - SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:9092

@@ -145,37 +145,43 @@ without embedded Connect schemas or a Schema Registry.
 
 ## Local development
 
-Requirements: Docker Engine with Docker Compose v2. To start the dependencies
-and applications, set a local-only PostgreSQL password and run from the
-repository root:
+Requirements: Docker Engine with Docker Compose v2, `curl`, and `jq`. Set the
+local-only PostgreSQL and CDC/Search database variables in the shell or in the
+ignored `compose/.env` file, then run from the repository root:
 
 ```sh
 export POSTGRES_PASSWORD='use-a-local-development-password'
-docker compose \
-  -f compose/compose.yml \
-  -f compose/compose.apps.yaml \
-  up --build
+export CDC_DATABASE_USER='product_cdc'
+export CDC_DATABASE_PASSWORD='use-a-local-development-password'
+export SEARCH_DATABASE_USER='product_search_app'
+export SEARCH_DATABASE_PASSWORD='use-a-local-development-password'
+scripts/start-local-stack.sh
 ```
 
 The application Compose file builds from sibling repositories at
 `../../product-catalog` and `../../product-search` relative to the Compose
 configuration. Clone those repositories beside this one to run the services.
+The startup script builds and starts the Compose services in the background,
+waits for Kafka Connect and Product Catalog readiness, registers the
+`product-outbox-connector`, and verifies that the connector and its task are
+running. It can be rerun without deleting volumes, Kafka topics, or offsets.
 
 | Service | Local endpoint |
 | --- | --- |
 | Product Catalog | `http://localhost:8080` |
-| Product Search | `http://localhost:8081` |
+| Product Search | `http://localhost:8084` |
 | PostgreSQL | `localhost:5432` |
 | Redis | `localhost:6380` |
 | OpenSearch | `http://localhost:9200` |
 | Kafka | `localhost:9092` |
 | Kafka Connect REST | `http://localhost:8083` |
 
-Use `docker compose ... logs -f <service>` to inspect a service and
-`docker compose ... down` to stop the stack. Named volumes preserve local
-PostgreSQL and OpenSearch data. The local OpenSearch security plugin is
-disabled; do not expose it beyond a trusted development machine. Compose uses
-development-oriented single-node services and is not a production deployment.
+Use `docker compose -f compose/compose.yml -f compose/compose.apps.yaml logs -f <service>`
+to inspect a service and the corresponding `down` command to stop the stack.
+Named volumes preserve local PostgreSQL and OpenSearch data. The local
+OpenSearch security plugin is disabled; do not expose it beyond a trusted
+development machine. Compose uses development-oriented single-node services
+and is not a production deployment.
 
 ## AWS infrastructure
 
