@@ -100,14 +100,14 @@ Create a protected GitHub environment named `production`; require reviewers
 for applies and limit allowed deployment branches. Configure these
 environment variables:
 
-| Variable | Purpose |
-| --- | --- |
-| `TERRAFORM_AWS_ROLE_ARN` | Least-privilege AWS OIDC deployment role |
-| `AWS_REGION` | AWS region for this environment |
-| `TF_STATE_BUCKET` | Encrypted, versioned state bucket |
-| `TF_STATE_KEY` | Unique Terraform state key |
-| `CLUSTER_VERSION` | EKS version discovered as supported in the region |
-| `ALERT_EMAIL` | Required email address for alarm notifications |
+| Variable                 | Purpose                                           |
+| ------------------------ | ------------------------------------------------- |
+| `TERRAFORM_AWS_ROLE_ARN` | Least-privilege AWS OIDC deployment role          |
+| `AWS_REGION`             | AWS region for this environment                   |
+| `TF_STATE_BUCKET`        | Encrypted, versioned state bucket                 |
+| `TF_STATE_KEY`           | Unique Terraform state key                        |
+| `CLUSTER_VERSION`        | EKS version discovered as supported in the region |
+| `ALERT_EMAIL`            | Required email address for alarm notifications    |
 
 The workflow checks required settings, reports the assumed AWS identity, and
 checks the selected EKS version against the region's support status. A
@@ -229,7 +229,7 @@ Secret has synchronized. Register the connector from a trusted host that can
 reach its internal REST service:
 
 ```sh
-bash scripts/register-outbox-connector.sh --env prod \
+bash bash scripts/register-outbox-connector.sh --env prod \
   --url http://kafka-connect.platform-production.svc.cluster.local:8083 \
   --file connectors/postgres-outbox-connector.json \
   --confirm-prod product-outbox-connector

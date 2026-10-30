@@ -54,7 +54,7 @@ wait_for_json \
   'Product Catalog readiness' 'http://localhost:8080/actuator/health/readiness' '.status == "UP"'
 
 LOCAL_CONNECT_REGISTRATION=1 \
-  "$ROOT_DIR/scripts/register-outbox-connector.sh" \
+  bash "$ROOT_DIR/scripts/register-outbox-connector.sh" \
   --env local --url "$CONNECT_URL" --file "$CONNECTOR_FILE"
 
 wait_for_connector() {

@@ -111,7 +111,7 @@ and replication slot. Avoid deleting a slot or resetting connector offsets
 without understanding the resulting replay or data-loss behavior.
 
 The connector endpoint is internal. Run
-`scripts/register-outbox-connector.sh --env <local|stage|prod> --url <url> --file <json>`
+`bash scripts/register-outbox-connector.sh --env <local|stage|prod> --url <url> --file <json>`
 only from a trusted host with network access to the service. All three
 arguments are required and there are no defaults; production also needs
 `--confirm-prod <connector-name>`, and local runs need
