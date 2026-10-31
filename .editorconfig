@@ -1,0 +1,120 @@
+
+# EditorConfig: consistent coding styles across editors and IDEs
+# https://editorconfig.org
+
+root = true
+
+# ---------------------------------------------------------------------------
+# Defaults
+# ---------------------------------------------------------------------------
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+# ---------------------------------------------------------------------------
+# Terraform and HCL
+# ---------------------------------------------------------------------------
+[*.tf]
+indent_style = space
+indent_size = 2
+max_line_length = 120
+
+[*.tfvars]
+indent_style = space
+indent_size = 2
+max_line_length = 120
+
+[*.hcl]
+indent_style = space
+indent_size = 2
+max_line_length = 120
+
+# ---------------------------------------------------------------------------
+# YAML, JSON and configuration formats
+# ---------------------------------------------------------------------------
+[*.{yaml,yml,json,jsonc}]
+indent_style = space
+indent_size = 2
+
+[*.toml]
+indent_style = space
+indent_size = 2
+
+[*.properties]
+indent_style = space
+indent_size = 2
+
+[*.xml]
+indent_style = space
+indent_size = 2
+
+# ---------------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------------
+[*.py]
+indent_style = space
+indent_size = 4
+max_line_length = 88
+
+[*.pyi]
+indent_style = space
+indent_size = 4
+max_line_length = 88
+
+# ---------------------------------------------------------------------------
+# Shell scripts
+# ---------------------------------------------------------------------------
+[*.{sh,bash}]
+indent_style = space
+indent_size = 2
+
+# ---------------------------------------------------------------------------
+# Docker and container tooling
+# ---------------------------------------------------------------------------
+[{Dockerfile,Dockerfile.*,*.dockerfile}]
+indent_style = space
+indent_size = 2
+
+# ---------------------------------------------------------------------------
+# Makefiles
+# ---------------------------------------------------------------------------
+[{Makefile,makefile,GNUmakefile,*.mk}]
+indent_style = tab
+
+# ---------------------------------------------------------------------------
+# Markdown documentation
+# ---------------------------------------------------------------------------
+[*.md]
+indent_style = space
+indent_size = 2
+trim_trailing_whitespace = false
+max_line_length = off
+
+# ---------------------------------------------------------------------------
+# GitHub Actions and CI configuration
+# ---------------------------------------------------------------------------
+[.github/workflows/*.{yaml,yml}]
+indent_style = space
+indent_size = 2
+
+# ---------------------------------------------------------------------------
+# Windows scripts
+# ---------------------------------------------------------------------------
+[*.{bat,cmd}]
+end_of_line = crlf
+
+# ---------------------------------------------------------------------------
+# Generated, cached and vendored files
+# ---------------------------------------------------------------------------
+[{.terraform/**,.terraform.lock.hcl,**/.terraform/**,**/generated/**,**/build/**,**/.pytest_cache/**,**/__pycache__/**}]
+charset = unset
+end_of_line = unset
+indent_style = unset
+indent_size = unset
+insert_final_newline = unset
+trim_trailing_whitespace = unset
+max_line_length = unset
