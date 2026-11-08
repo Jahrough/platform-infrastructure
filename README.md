@@ -102,31 +102,68 @@ flowchart LR
 
 ### Resource ownership
 
-| Owner | Responsibility |
-| --- | --- |
-| `platform-infrastructure` | Terraform-managed AWS foundations, networking, EKS infrastructure and AWS-managed add-ons, data services, IAM, secret storage, and infrastructure outputs. Local Compose configuration is also here. |
-| `platform-gitops` | Argo CD projects/applications and Kubernetes desired state, including controllers installed by Helm, application workloads, External Secrets resources, policies, ingress, and rollout configuration. |
-| Service repositories | Application behavior, APIs, tests, database migrations and schemas, event contracts, and service-specific instrumentation. |
+| Owner                     | Responsibility                                                                                                                                                                                        |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `platform-infrastructure` | Terraform-managed AWS foundations, networking, EKS infrastructure and AWS-managed add-ons, data services, IAM, secret storage, and infrastructure outputs. Local Compose configuration is also here.  |
+| `platform-gitops`         | Argo CD projects/applications and Kubernetes desired state, including controllers installed by Helm, application workloads, External Secrets resources, policies, ingress, and rollout configuration. |
+| Service repositories      | Application behavior, APIs, tests, database migrations and schemas, event contracts, and service-specific instrumentation.                                                                            |
 
 Terraform may provision cloud identities and permissions for controllers
 installed by GitOps, but must not manage the same Kubernetes resources as
 Argo CD. Connector behavior and event semantics should remain coordinated
 with the relevant service owner.
 
+### Infrastructure to GitOps handoff
+
+Terraform publishes non-secret configuration as outputs. The output helper
+formats those values, an operator reviews the resulting Git changes, and Argo
+CD syncs only after existing cluster ownership has been inventoried and
+deliberately handed off. Syncs are manual.
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': {'lineColor': '#8b949e', 'edgeLabelBackground': '#21262d', 'primaryTextColor': '#e6edf3', 'tertiaryTextColor': '#e6edf3', 'clusterBkg': '#161b22', 'clusterBorder': '#30363d', 'titleColor': '#e6edf3'}}}%%
+flowchart LR
+    outputs["Terraform outputs<br/>resource IDs, endpoints,<br/>role ARNs, secret identifiers"]
+    helper["Terraform output helper<br/>non-secret configuration only"]
+    review{"Operator reviews<br/>Git changes"}
+    gitops["platform-gitops<br/>desired state"]
+    inventory{"Existing cluster ownership<br/>inventoried and handed off?"}
+    argocd["Argo CD"]
+    k8s["Kubernetes workloads<br/>and controllers"]
+    hold(["Do not sync yet"])
+
+    outputs --> helper
+    helper -->|"proposed values"| review
+    review -->|"commit in platform-gitops"| gitops
+    gitops --> inventory
+    inventory -->|"yes"| argocd
+    inventory -->|"no"| hold
+    argocd -->|"manual sync"| k8s
+
+    classDef core fill:#1f6feb,stroke:#79c0ff,stroke-width:2px,color:#ffffff
+    classDef internal fill:#21262d,stroke:#58a6ff,stroke-width:2px,color:#e6edf3
+    classDef gate fill:#21262d,stroke:#d29922,stroke-width:2px,color:#e6edf3
+    classDef external fill:#21262d,stroke:#8b949e,stroke-width:2px,stroke-dasharray:5 5,color:#e6edf3
+    class outputs,helper,gitops,k8s internal
+    class argocd core
+    class review,inventory gate
+    class hold external
+```
+
 ## Repository layout
 
-| Path | Purpose |
-| --- | --- |
-| `.github/aws/` | Example GitHub Actions OIDC trust policy |
-| `.github/workflows/` | Infrastructure validation, protected Terraform workflow, and Kafka Connect image publishing |
-| `compose/` | Local PostgreSQL, Redis, Kafka, OpenSearch, Kafka Connect, and optional application Compose configuration |
-| `connectors/` | Interim Debezium connector configuration for local development and operator registration |
-| `scripts/` | Terraform state bootstrap, database/CDC bootstrap, GitOps handoff, and connector registration helpers |
-| `terraform/` | One Terraform root for AWS foundations, managed services, IAM, observability, and outputs |
-| `terraform/modules/database/` | PostgreSQL instance, subnet group, security group, and parameter group |
-| `tests/` | Tests for infrastructure handoff helpers |
-| `DEPLOYMENT.md` | Production prerequisites, bootstrap order, and operator commands |
-| `OPERATIONS.md` | Monitoring, incident triage, and recovery exercises |
+| Path                          | Purpose                                                                                                   |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `.github/aws/`                | Example GitHub Actions OIDC trust policy                                                                  |
+| `.github/workflows/`          | Infrastructure validation, protected Terraform workflow, and Kafka Connect image publishing               |
+| `compose/`                    | Local PostgreSQL, Redis, Kafka, OpenSearch, Kafka Connect, and optional application Compose configuration |
+| `connectors/`                 | Interim Debezium connector configuration for local development and operator registration                  |
+| `scripts/`                    | Terraform state bootstrap, database/CDC bootstrap, GitOps handoff, and connector registration helpers     |
+| `terraform/`                  | One Terraform root for AWS foundations, managed services, IAM, observability, and outputs                 |
+| `terraform/modules/database/` | PostgreSQL instance, subnet group, security group, and parameter group                                    |
+| `tests/`                      | Tests for infrastructure handoff helpers                                                                  |
+| `DEPLOYMENT.md`               | Production prerequisites, bootstrap order, and operator commands                                          |
+| `OPERATIONS.md`               | Monitoring, incident triage, and recovery exercises                                                       |
 
 Kubernetes manifests and Argo CD configuration are maintained in
 `platform-gitops`, not in this repository. Terraform currently has one root
@@ -144,6 +181,28 @@ The connector expands the JSON text payload and reads the outbox
 literal version number. Product Search separately validates the JSON event
 body against its checked-in schema because the JSON converter is configured
 without embedded Connect schemas or a Schema Registry.
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': {'lineColor': '#8b949e', 'edgeLabelBackground': '#21262d', 'primaryTextColor': '#e6edf3', 'tertiaryTextColor': '#e6edf3', 'clusterBkg': '#161b22', 'clusterBorder': '#30363d', 'titleColor': '#e6edf3'}}}%%
+flowchart LR
+    catalog["Product Catalog<br/>writes product + outbox row"]
+    pg[("PostgreSQL<br/>outbox table")]
+    connect["Kafka Connect<br/>Debezium connector<br/>product-outbox-connector"]
+    kafka["Kafka"]
+    search["Product Search<br/>validates event body against<br/>its checked-in schema"]
+    os[("OpenSearch")]
+
+    catalog --> pg
+    pg -->|"CDC"| connect
+    connect -->|"expands JSON payload;<br/>schema_version column becomes<br/>Connect schema-version metadata"| kafka
+    kafka --> search
+    search --> os
+
+    classDef core fill:#1f6feb,stroke:#79c0ff,stroke-width:2px,color:#ffffff
+    classDef internal fill:#21262d,stroke:#58a6ff,stroke-width:2px,color:#e6edf3
+    class connect core
+    class catalog,pg,kafka,search,os internal
+```
 
 ## Local development
 
@@ -168,14 +227,46 @@ waits for Kafka Connect and Product Catalog readiness, registers the
 `product-outbox-connector`, and verifies that the connector and its task are
 running. It can be rerun without deleting volumes, Kafka topics, or offsets.
 
-| Service | Local endpoint |
-| --- | --- |
-| Product Catalog | `http://localhost:8080` |
-| Product Search | `http://localhost:8084` |
-| PostgreSQL | `localhost:5432` |
-| Redis | `localhost:6380` |
-| OpenSearch | `http://localhost:9200` |
-| Kafka | `localhost:9092` |
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': {'lineColor': '#8b949e', 'edgeLabelBackground': '#21262d', 'primaryTextColor': '#e6edf3', 'tertiaryTextColor': '#e6edf3', 'clusterBkg': '#161b22', 'clusterBorder': '#30363d', 'titleColor': '#e6edf3'}}}%%
+flowchart LR
+    script["scripts/start-local-stack.sh"]
+    sibling["Sibling repositories<br/>../../product-catalog<br/>../../product-search"]
+
+    subgraph compose["Docker Compose — development only"]
+        pg[("PostgreSQL<br/>localhost:5432")]
+        redis[("Redis<br/>localhost:6380")]
+        kafka["Kafka<br/>localhost:9092"]
+        os[("OpenSearch<br/>localhost:9200")]
+        connect["Kafka Connect<br/>localhost:8083"]
+        catalog["Product Catalog<br/>localhost:8080"]
+        search["Product Search<br/>localhost:8084"]
+    end
+
+    script -->|"1 build and start in background"| compose
+    sibling -->|"build contexts"| catalog
+    sibling -->|"build contexts"| search
+    script -->|"2 wait for readiness"| connect
+    script -->|"2 wait for readiness"| catalog
+    script -->|"3 register product-outbox-connector"| connect
+    script -->|"4 verify connector and task running"| connect
+
+    classDef core fill:#1f6feb,stroke:#79c0ff,stroke-width:2px,color:#ffffff
+    classDef internal fill:#21262d,stroke:#58a6ff,stroke-width:2px,color:#e6edf3
+    classDef external fill:#21262d,stroke:#8b949e,stroke-width:2px,stroke-dasharray:5 5,color:#e6edf3
+    class script core
+    class pg,redis,kafka,os,connect,catalog,search internal
+    class sibling external
+```
+
+| Service            | Local endpoint          |
+| ------------------ | ----------------------- |
+| Product Catalog    | `http://localhost:8080` |
+| Product Search     | `http://localhost:8084` |
+| PostgreSQL         | `localhost:5432`        |
+| Redis              | `localhost:6380`        |
+| OpenSearch         | `http://localhost:9200` |
+| Kafka              | `localhost:9092`        |
 | Kafka Connect REST | `http://localhost:8083` |
 
 Use `docker compose -f compose/compose.yml -f compose/compose.apps.yaml logs -f <service>`
@@ -205,6 +296,72 @@ the [deployment runbook](DEPLOYMENT.md). For monitoring, incident response,
 and recovery guidance, see [operations](OPERATIONS.md) and review the current
 infrastructure details in [terraform/README.md](terraform/README.md).
 
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': {'lineColor': '#8b949e', 'edgeLabelBackground': '#21262d', 'primaryTextColor': '#e6edf3', 'tertiaryTextColor': '#e6edf3', 'clusterBkg': '#161b22', 'clusterBorder': '#30363d', 'titleColor': '#e6edf3'}}}%%
+flowchart TB
+    subgraph vpc["VPC — three AZs, private subnets"]
+        eks["Private EKS<br/>managed node groups<br/>AWS-managed add-ons"]
+        rds[("PostgreSQL RDS<br/>private")]
+        msk["Amazon MSK<br/>three brokers"]
+        redis[("Redis<br/>encrypted, Multi-AZ")]
+        os[("OpenSearch<br/>private domain")]
+    end
+
+    iam["IAM roles"]
+    secrets["Secrets Manager"]
+    cw["CloudWatch<br/>selected alarms + dashboard"]
+    state[("S3 backend<br/>encrypted, versioned, locked<br/>sensitive state")]
+
+    eks --> rds
+    eks --> msk
+    eks --> redis
+    eks --> os
+    iam -.->|"workload access"| eks
+    secrets -.->|"credentials"| eks
+    vpc -.->|"metrics and logs"| cw
+
+    classDef core fill:#1f6feb,stroke:#79c0ff,stroke-width:2px,color:#ffffff
+    classDef internal fill:#21262d,stroke:#58a6ff,stroke-width:2px,color:#e6edf3
+    classDef external fill:#21262d,stroke:#8b949e,stroke-width:2px,stroke-dasharray:5 5,color:#e6edf3
+    class eks core
+    class rds,msk,redis,os,iam,secrets,cw internal
+    class state external
+```
+
+Terraform deployment is a manual workflow with a protected apply step. The
+diagram shows the intended flow; the runbook remains authoritative for
+prerequisites and ordering.
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': {'lineColor': '#8b949e', 'edgeLabelBackground': '#21262d', 'primaryTextColor': '#e6edf3', 'tertiaryTextColor': '#e6edf3', 'clusterBkg': '#161b22', 'clusterBorder': '#30363d', 'titleColor': '#e6edf3'}}}%%
+flowchart LR
+    op(["Authorized operator"])
+    wf["Manual Terraform workflow"]
+    oidc["GitHub OIDC role"]
+    state[("S3 backend<br/>state + lock file")]
+    plan["Plan"]
+    gate{"Protected<br/>production environment"}
+    aws["AWS resources"]
+    out["Terraform outputs"]
+
+    op -->|"1 manual dispatch"| wf
+    wf -->|"2 assume role"| oidc
+    wf <-->|"3 locked state"| state
+    wf -->|"4 plan"| plan
+    plan -->|"5 apply requires approval"| gate
+    gate -->|"6 apply"| aws
+    aws -->|"7 publish metadata"| out
+
+    classDef core fill:#1f6feb,stroke:#79c0ff,stroke-width:2px,color:#ffffff
+    classDef internal fill:#21262d,stroke:#58a6ff,stroke-width:2px,color:#e6edf3
+    classDef gate fill:#21262d,stroke:#d29922,stroke-width:2px,color:#e6edf3
+    classDef external fill:#21262d,stroke:#8b949e,stroke-width:2px,stroke-dasharray:5 5,color:#e6edf3
+    class wf core
+    class op,oidc,plan,aws,out internal
+    class gate gate
+    class state external
+```
+
 ## Validation and CI
 
 The infrastructure GitHub Actions validate workflow checks YAML, Compose
@@ -213,6 +370,37 @@ and validation. Kubernetes/Helm and CDC manifest validation belongs to the
 separate `platform-gitops` workflow. Terraform deployment is manual and uses
 a protected production environment; Kafka Connect image publishing is handled
 by its own workflow.
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': {'lineColor': '#8b949e', 'edgeLabelBackground': '#21262d', 'primaryTextColor': '#e6edf3', 'tertiaryTextColor': '#e6edf3', 'clusterBkg': '#161b22', 'clusterBorder': '#30363d', 'titleColor': '#e6edf3'}}}%%
+flowchart LR
+    trigger(["PR / push"])
+
+    subgraph infraci["platform-infrastructure — validation workflow"]
+        yaml["YAML"]
+        compose["Compose configuration"]
+        json["Connector JSON"]
+        scripts["Shell and Python scripts"]
+        tf["Terraform format<br/>and validate"]
+    end
+
+    subgraph separate["Separate workflows"]
+        deploy["Manual Terraform workflow<br/>protected production environment"]
+        image["Kafka Connect<br/>image publishing"]
+        gitopsci["platform-gitops<br/>Kubernetes/Helm + CDC<br/>manifest validation"]
+    end
+
+    trigger --> yaml
+    trigger --> compose
+    trigger --> json
+    trigger --> scripts
+    trigger --> tf
+
+    classDef internal fill:#21262d,stroke:#58a6ff,stroke-width:2px,color:#e6edf3
+    classDef external fill:#21262d,stroke:#8b949e,stroke-width:2px,stroke-dasharray:5 5,color:#e6edf3
+    class yaml,compose,json,scripts,tf internal
+    class deploy,image,gitopsci external
+```
 
 Available local checks that do not access a remote Terraform backend:
 
