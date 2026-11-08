@@ -118,6 +118,27 @@ arguments are required and there are no defaults; production also needs
 `LOCAL_CONNECT_REGISTRATION=1`. Validate consumer lag and downstream indexing
 after connector recovery.
 
+### Local Testcontainers evidence (not production validation)
+
+A prior run of
+`product-search/src/test/java/dev/jahlopez/productsearch/integration/DebeziumOutboxEvidenceTest.java`
+used PostgreSQL 15.4, Apache Kafka 3.7.0, and a local Connect image based on
+Confluent 7.6.14 with Debezium PostgreSQL connector 2.5.4. In that isolated
+test environment:
+
+- C3 hard Connect restart produced one duplicate and no lost events.
+- C5 replacing the Connect offsets topic while retaining the slot produced
+  three duplicate events.
+- C6 dropping the replication slot while Connect was down left the connector
+  reporting `RUNNING`, while only 3 of 9 test events reached Kafka.
+- C7 using a different connector name with the same slot produced six
+  duplicates.
+
+These are test-specific observations, not RDS/MSK or production guarantees.
+In particular, a `RUNNING` connector state alone did not establish source
+continuity in C6. Compare source rows, slot state, connector offsets, and
+downstream records before declaring recovery complete.
+
 ## Network policy validation
 
 Production egress policies permit app-specific database, cache, Kafka, and
