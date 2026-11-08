@@ -15,6 +15,8 @@ managed services while supporting AWS-independent local development.
 > Before syncing a GitOps source, inventory any existing cluster ownership
 > and complete a deliberate handoff.
 
+Cross-repository architecture decisions are tracked in the canonical [Product Platform ADR index](https://github.com/Jahrough/ai-native-engineering/blob/main/docs/architecture/adr/README.md). Those records are proposals unless explicit approval is recorded; they do not imply implementation or deployment.
+
 ## Architecture
 
 ```mermaid
